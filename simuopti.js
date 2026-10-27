@@ -314,7 +314,7 @@ window.SIMUOPTI_LITE = true;
       const attBase = vieABattre / bonusAtt;
       const replique10 = sumBy(enemy, 'def') * (1 + eArmes / 10) / 10;
       const jsn = Math.ceil(replique10 / (U.JSN.vie * (1 + my.bouclier / 10)));
-      const jsnMarge = Math.ceil(jsn * (1 + (my.tampon == null ? 5 : my.tampon) / 100));
+      const jsnMarge = Math.ceil(jsn * (1 + (my.tampon == null ? TAMPON_DEFAUT : my.tampon) / 100));
       const M = enemy.reduce((s, [c, n]) => s + n * U[c].xp, 0);
       const K = 43.56 * (1 + my.cochenille / 10) * (1 + eArmes / 10) * eMult / (1 + my.bouclier / 10) / bonusAtt;
       const Nmax = M * Math.sqrt(K / 100); // armée pondérée au-delà de laquelle l'XP passe sous 100 %
@@ -326,6 +326,9 @@ window.SIMUOPTI_LITE = true;
       const pct = Math.min(100, xpPct({ enemy, sent: army, eArmes, eMult, aArmes: my.armes, aBouclier: my.bouclier, cochenille: my.cochenille }));
       return { vieABattre, attBase, replique10, jsn, jsnMarge, nMin, nXp, n, unit, pct, place, evolue: u.pex ? Math.floor(n * pct / 100) : 0 };
     }
+
+    /** Marge tampon par défaut (%) ajoutée au minimum de JSN : l'adversaire pond entre le RC et l'arrivée. */
+    const TAMPON_DEFAUT = 20;
 
     function analyseText(text, my) {
       const combats = parseReports(text);
@@ -401,7 +404,7 @@ window.SIMUOPTI_LITE = true;
       const attReq = vieABattre / bA;
       const replique = sumBy(enemy, 'def') * (1 + eArmes / 10) * facteur;
       const jsnNeed = Math.ceil(replique / (UNITS.JSN.vie * bB));
-      const jsnMarge = Math.ceil(jsnNeed * (1 + (my.tampon == null ? 5 : my.tampon) / 100));
+      const jsnMarge = Math.ceil(jsnNeed * (1 + (my.tampon == null ? TAMPON_DEFAUT : my.tampon) / 100));
       const M = enemy.reduce((s, [c, n]) => s + n * UNITS[c].xp, 0);
       const K = 43.56 * (1 + (my.cochenille || 0) / 10) * (1 + eArmes / 10) * eMult / bB / bA;
       const Nmax = M * Math.sqrt(K / 100);
@@ -562,7 +565,7 @@ window.SIMUOPTI_LITE = true;
     }
 
 
-    const api = { rythmePonte, departDepuisRc, dateRc, tdpDepuisRcs, NOMS, T0, trajet, vaDepuisTrajet, dureeLue, dureeTexte, tdp, TDP_BASE, toInt,
+    const api = { TAMPON_DEFAUT, rythmePonte, departDepuisRc, dateRc, tdpDepuisRcs, NOMS, T0, trajet, vaDepuisTrajet, dureeLue, dureeTexte, tdp, TDP_BASE, toInt,
       LAB, UNITS, EVOL, GAIN, parseArmyLoose, optimize, parseReports, analyseCombat, analyseText, xpPct, combos, plan, players, sumBy };
     return api;
   })();
@@ -573,13 +576,13 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.13.0'; // aligné sur @version
+  const VERSION = '1.14.0'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
   const LITE = window.SIMUOPTI_LITE === true;
   const CODE = APP && !LITE; // fonctions en ligne déverrouillées par un code : APK et exe seulement
-  const DEFAUT = { armes: 0, bouclier: 0, cochenille: 0, secu: 1.02, tampon: 5, pseudo: '', xpUnits: ['T'], onglet: 'rc', joueurs: {} };
+  const DEFAUT = { armes: 0, bouclier: 0, cochenille: 0, secu: 1.02, tampon: Core.TAMPON_DEFAUT, pseudo: '', xpUnits: ['T'], onglet: 'rc', joueurs: {} };
   // Stockage Tampermonkey : hors de portée des scripts du site (contrairement au localStorage de fourmizzz.fr)
   const GM = typeof GM_getValue === 'function' && typeof GM_setValue === 'function';
   const loadCfg = () => {
@@ -599,6 +602,7 @@ window.SIMUOPTI_LITE = true;
   };
   let cfg = loadCfg();
   if (!cfg.joueurs) cfg.joueurs = {};
+  if (!cfg.tamponV2) { if (cfg.tampon == null || cfg.tampon === 5) cfg.tampon = Core.TAMPON_DEFAUT; cfg.tamponV2 = true; saveCfg(cfg); }
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const fmt = (n) => (n == null || !isFinite(n) ? '—' : Math.round(n).toLocaleString('fr-FR'));
@@ -749,6 +753,10 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .big{font-weight:800;color:#fff}
   #simuopti-ui .warn.big{color:var(--warn)}#simuopti-ui .ok.big{color:var(--ok)}
   /* ---- Messages (encadrés) et aide repliable ---- */
+  #simuopti-ui .tampon{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0;padding:8px 10px;border-radius:8px;border:1px solid var(--bronze2);border-left:4px solid var(--bronze);background:var(--carte2);font-size:13px}
+  #simuopti-ui .tampon b{color:var(--or)}
+  #simuopti-ui .tampon input{width:64px!important;text-align:right;font-weight:700}
+  #simuopti-ui tr.tampon-l td{color:var(--or);font-weight:700}
   #simuopti-ui .note{margin:6px 0;padding:7px 10px;border-radius:8px;border-left:3px solid var(--ligne2);background:var(--carte2);font-size:13px}
   #simuopti-ui .note.ok{border-left-color:var(--ok);background:var(--okf);color:var(--texte)}
   #simuopti-ui .note.warn{border-left-color:var(--warn);background:var(--warnf);color:var(--texte)}
@@ -942,7 +950,7 @@ window.SIMUOPTI_LITE = true;
           <label>Armes <input type="number" min="0" max="60" data-k="armes"></label>
           <label>Bouclier <input type="number" min="0" max="60" data-k="bouclier"></label>
           <label>Cochenille <input type="number" min="0" max="60" data-k="cochenille"></label>
-          <label title="Marge ajoutée au minimum de JSN tampon">Marge tampon (%) <input type="number" min="0" max="500" step="1" data-k="tampon"></label>
+          <label title="JSN ajoutées au minimum pour encaisser la réplique si l’adversaire a pondu depuis le RC">🛡️ Marge tampon JSN (%) <input type="number" min="0" max="500" step="1" data-k="tampon"></label>
         </div>
         <div class="row"><div class="xpsel"><span>Unités à faire évoluer</span>${Object.keys(Core.EVOL).map((u) => `<label class="chip"><input type="checkbox" data-xp="${u}">${L(u)}</label>`).join('')}</div></div>
       </div></details>
@@ -994,7 +1002,7 @@ window.SIMUOPTI_LITE = true;
     });
     // résumé des réglages sur le bloc replié ; ouvert tant que rien n'est réglé
     const majReglages = () => {
-      v.querySelector('[data-regres]').textContent = `${cfg.pseudo || 'pseudo ?'} · Armes ${cfg.armes || 0} · Bouclier ${cfg.bouclier || 0} · Cochenille ${cfg.cochenille || 0} · ${(cfg.xpUnits || []).map(L).join(' + ') || 'aucune unité'}`;
+      v.querySelector('[data-regres]').textContent = `${cfg.pseudo || 'pseudo ?'} · Armes ${cfg.armes || 0} · Bouclier ${cfg.bouclier || 0} · Cochenille ${cfg.cochenille || 0} · Tampon +${cfg.tampon ?? Core.TAMPON_DEFAUT} % · ${(cfg.xpUnits || []).map(L).join(' + ') || 'aucune unité'}`;
     };
     majReglages();
     if (!cfg.armes && !cfg.pseudo) v.querySelector('[data-reglages]').open = true;
@@ -1005,6 +1013,12 @@ window.SIMUOPTI_LITE = true;
     v.querySelector('[data-page]').onclick = () => { ta.value = document.body.innerText; keepRc(); render(ta.value, out, { choisir: true }); };
     ta.addEventListener('input', keepRc);
     // délégation : copie des niveaux, envoi vers le simulateur
+    out.addEventListener('change', (e) => {
+      if (!e.target.matches('[data-tampon]')) return;
+      cfg.tampon = Math.max(0, parseFloat(e.target.value) || 0); saveCfg(cfg);
+      v.querySelector('[data-k=tampon]').value = cfg.tampon;
+      majReglages(); rerender();
+    });
     out.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -1155,8 +1169,9 @@ window.SIMUOPTI_LITE = true;
         html += `<h4 style="margin-top:10px">🎯 Pour le passer en un tour (avec tes niveaux)</h4>
           <table>
           <tr><td>Vie à battre (×${f2(eMult)}${exactV ? '' : ', plafond'} × sécurité ${f2(cfg.secu)})</td><td class="big">${fmt(o0.vieABattre)}</td></tr>
-          <tr><td>JSN tampon minimum (+${cfg.tampon ?? 5} %, bouclier ${res.my.bouclier}, ${res.my.source.bouclier})</td><td class="big">${fmt(o0.jsnNeed)} → ${fmt(o0.jsnMarge)}</td></tr>
+          <tr class="tampon-l"><td>🛡️ JSN tampon : minimum → avec la marge (bouclier ${res.my.bouclier}, ${res.my.source.bouclier})</td><td class="big">${fmt(o0.jsnNeed)} → ${fmt(o0.jsnMarge)}</td></tr>
           </table>
+          <div class="tampon">🛡️ <b>Marge tampon</b> <input type="number" min="0" max="500" step="5" data-tampon value="${cfg.tampon ?? Core.TAMPON_DEFAUT}"> % <span>= <b>+${fmt(o0.jsnMarge - o0.jsnNeed)} JSN</b> au-delà du minimum, si l’adversaire a pondu depuis ce RC</span></div>
           <div class="mut" style="margin-top:6px">Armée conseillée (${cibles.map(L).join(' + ')}) :</div>` + bloc(o0, false);
         let choisi = o0;
         const mine = Core.parseArmyLoose(cfg.armee);
@@ -1166,6 +1181,7 @@ window.SIMUOPTI_LITE = true;
           if (o.passe) choisi = o;
         }
         if (!exactV) html += '<div class="warn">Vie estimée par plafond : la vraie vie est plus basse, l’armée conseillée est prudente.</div>';
+        html += `<details class="aide"><summary>Pourquoi une marge tampon de JSN ?</summary><div>Les JSN partent en tête de ton armée : la réplique du défenseur tue les unités dans l’ordre de l’armée, donc ce sont elles qui meurent à la place des unités qui frappent et qui évoluent. Le minimum est calculé sur l’armée vue dans ce RC. Mais entre ce RC et l’arrivée de ton attaque, l’adversaire continue de pondre : sa réplique grandit, et sans marge ce sont tes autres unités qui meurent et n’évoluent pas. La marge ajoute ce pourcentage de JSN au minimum : <b>${cfg.tampon ?? Core.TAMPON_DEFAUT} %</b> ici (20 % par défaut). Augmente-la si le RC est ancien ou si l’adversaire pond vite (voir sa TdP dans l’onglet VA &amp; TdP), baisse-la si le RC vient d’être pris. Elle ne touche pas la vie à battre : si sa ponte est forte, refais un RC récent avant d’attaquer.</div></details>`;
         html += '<div class="row">';
         html += `${choisi.passe ? `<button class="b mini alt" type="button" data-copiearmee="${esc(texteArmee(choisi.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée conseillée</button>` : ''}</div>`;
       }
