@@ -576,7 +576,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.14.0'; // aligné sur @version
+  const VERSION = '1.14.1'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -757,6 +757,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .tampon b{color:var(--or)}
   #simuopti-ui .tampon input{width:64px!important;text-align:right;font-weight:700}
   #simuopti-ui tr.tampon-l td{color:var(--or);font-weight:700}
+  #simuopti-ui .estimation{margin:8px 0 4px;padding:8px 10px;border-radius:8px;border:1px solid var(--ko);background:var(--kof);color:var(--ko);font-weight:700;font-size:13px}
   #simuopti-ui .note{margin:6px 0;padding:7px 10px;border-radius:8px;border-left:3px solid var(--ligne2);background:var(--carte2);font-size:13px}
   #simuopti-ui .note.ok{border-left-color:var(--ok);background:var(--okf);color:var(--texte)}
   #simuopti-ui .note.warn{border-left-color:var(--warn);background:var(--warnf);color:var(--texte)}
@@ -1182,6 +1183,7 @@ window.SIMUOPTI_LITE = true;
         }
         if (!exactV) html += '<div class="warn">Vie estimée par plafond : la vraie vie est plus basse, l’armée conseillée est prudente.</div>';
         html += `<details class="aide"><summary>Pourquoi une marge tampon de JSN ?</summary><div>Les JSN partent en tête de ton armée : la réplique du défenseur tue les unités dans l’ordre de l’armée, donc ce sont elles qui meurent à la place des unités qui frappent et qui évoluent. Le minimum est calculé sur l’armée vue dans ce RC. Mais entre ce RC et l’arrivée de ton attaque, l’adversaire continue de pondre : sa réplique grandit, et sans marge ce sont tes autres unités qui meurent et n’évoluent pas. La marge ajoute ce pourcentage de JSN au minimum : <b>${cfg.tampon ?? Core.TAMPON_DEFAUT} %</b> ici (20 % par défaut). Augmente-la si le RC est ancien ou si l’adversaire pond vite (voir sa TdP dans l’onglet VA &amp; TdP), baisse-la si le RC vient d’être pris. Elle ne touche pas la vie à battre : si sa ponte est forte, refais un RC récent avant d’attaquer.</div></details>`;
+        html += '<div class="estimation">⚠️ Attention : ceci n’est qu’une estimation et nécessite tout de même une vérification par simulation.</div>';
         html += '<div class="row">';
         html += `${choisi.passe ? `<button class="b mini alt" type="button" data-copiearmee="${esc(texteArmee(choisi.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée conseillée</button>` : ''}</div>`;
       }
