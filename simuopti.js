@@ -718,7 +718,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.17.0'; // aligné sur @version
+  const VERSION = '1.17.1'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -966,6 +966,13 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .reglages .tampon details.aide{border:0;padding:0;margin:0 0 0 auto}
   #simuopti-ui .reglages .tampon details.aide[open]{flex-basis:100%}
   #simuopti-ui .reglages .armybox{background:var(--carte)}
+  #simuopti-ui .explic{font-size:11.5px;line-height:1.4;color:var(--mut);margin:6px 0 2px}
+  #simuopti-ui .explic b{color:var(--texte)}
+  #simuopti-ui .tampon .explic{flex-basis:100%;margin:2px 0 0}
+  #simuopti-ui .explic details.aide{border:0;padding:0;margin:2px 0 0}
+  #simuopti-ui .reglages .ponte{display:flex;align-items:center;gap:6px;margin:10px 0 0;font-size:13px;color:var(--texte)}
+  #simuopti-ui .reglages .ponte input{width:auto!important}
+  #simuopti-ui .ponte-note{margin:6px 0;padding:7px 10px;border-radius:8px;background:var(--carte2);border:1px solid var(--ligne2);font-size:12.5px}
   #simuopti-ui .combat .tete,#simuopti-ui .prop .tete{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
   #simuopti-ui .combat .tete h4,#simuopti-ui .prop .tete h4{margin:0}
   #simuopti-ui .pastilles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0}
@@ -1207,11 +1214,16 @@ window.SIMUOPTI_LITE = true;
           <label>Cochenille <input type="number" min="0" max="60" data-k="cochenille"></label>
           <label title="Vie à battre × ce coefficient, par prudence">Sécurité <input type="number" min="1" max="2" step="0.01" data-k="secu"></label>
         </div>
+        <div class="explic">ⓘ <b>Sécurité</b> : augmente ta frappe pour couvrir sa ponte depuis le RC : sans elle, tu risques de ne pas le tuer au 1er tour. 1,02 = +2 % ; monte-la si le RC est ancien.
+          <details class="aide"><summary>Pourquoi ?</summary><div>La sécurité multiplie la vie de l’adversaire à battre, donc le nombre de tes unités qui frappent. Elle décide si tu passes en un tour, avec la réplique ÷10 de l’écrasante victoire. La marge tampon, elle, ne protège que tes unités de sa réplique. Exemple : s’il a grossi de 10 % depuis le RC, une marge tampon de 20 % encaisse bien sa réplique, mais une sécurité de 1,02 ne suffit plus pour le tuer au 1er tour : monte alors les deux (par exemple 1,10 et 30 %).</div></details></div>
         <label class="pseudo">Mon pseudo <input type="text" data-k="pseudo" placeholder="pour reconnaître mes rapports"></label>
         <div class="sous">Unités à faire évoluer</div>
         <div class="xpsel">${Object.keys(Core.EVOL).map((u) => `<label class="chip"><input type="checkbox" data-xp="${u}">${L(u)}</label>`).join('')}</div>
         <div class="tampon"><label title="JSN ajoutées au minimum pour encaisser la réplique si l’adversaire a pondu depuis le RC">🛡️ Marge tampon JSN <input type="number" min="0" max="500" step="5" data-k="tampon"> %</label>
+          <div class="explic">ⓘ Ajoute des JSN pour encaisser sa réplique : sans elles, ce sont tes unités qui frappent qui meurent. 20 % par défaut ; monte-la si le RC est ancien.</div>
           <details class="aide"><summary>Pourquoi ?</summary><div>Les JSN partent en tête de ton armée : la réplique du défenseur tue les unités dans l’ordre de l’armée, donc ce sont elles qui meurent à la place des unités qui frappent et qui évoluent. Le minimum est calculé sur l’armée vue dans le RC. Mais entre le RC et l’arrivée de ton attaque, l’adversaire continue de pondre : sa réplique grandit, et sans marge ce sont tes autres unités qui meurent et n’évoluent pas. La marge ajoute ce pourcentage de JSN au minimum (20 % par défaut). Augmente-la si le RC est ancien ou si l’adversaire pond vite (voir sa TdP dans l’onglet VA &amp; TdP), baisse-la si le RC vient d’être pris. Elle ne touche pas la vie à battre : si sa ponte est forte, refais un RC récent avant d’attaquer.</div></details></div>
+        <label class="case ponte"><input type="checkbox" data-ponte> 🥚 Compter sa ponte depuis l’heure du RC</label>
+        <div class="explic">ⓘ Ajoute à sa défense ce qu’il a pondu entre le RC et maintenant, d’après la TdP et l’unité pondue de sa fiche (calculées dans VA &amp; TdP avec deux RC).</div>
         <details data-armybox class="armybox"><summary><span class="ico">🐜</span><span>Mon armée <span class="mut">— pour l’envoi depuis mes troupes</span></span><span class="badge" data-armybadge>vide</span><span class="chev">▼</span></summary>
           <textarea data-army style="height:80px;margin-top:4px" placeholder="Colle ton armée disponible : « Copier l'armée » d'un rapport, ou la liste de la page Armée (une unité par ligne)…"></textarea>
           <div class="mut" data-armyread></div>
@@ -1242,6 +1254,9 @@ window.SIMUOPTI_LITE = true;
       cfg.armee = taArmy.value; saveCfg(cfg); showArmy();
       clearTimeout(taArmy._t); taArmy._t = setTimeout(rerender, 400);
     });
+    const cbPonte = v.querySelector('[data-ponte]');
+    cbPonte.checked = cfg.ponte !== false;
+    cbPonte.addEventListener('change', () => { cfg.ponte = cbPonte.checked; saveCfg(cfg); rerender(); });
     if (!Array.isArray(cfg.xpUnits)) cfg.xpUnits = [cfg.unit || 'T'];
     v.querySelectorAll('[data-xp]').forEach((cb) => {
       cb.checked = cfg.xpUnits.includes(cb.dataset.xp);
@@ -1385,9 +1400,29 @@ window.SIMUOPTI_LITE = true;
       const eMult = r.defMult || (r.xpMult && !r.xpMult.full ? r.xpMult.mult : null) || r.defPlafond;
       const exactV = !!(r.defMult || (r.xpMult && !r.xpMult.full));
       const nbT = r.rounds.length;
+      // ponte depuis l'heure du RC, d'après la TdP et l'unité pondue de sa fiche (désactivable dans les réglages)
+      let ennemi = r.combat.defenders, ponte = null;
+      if (cfg.ponte !== false && dn !== 'Moi' && !memeNom(dn, me)) {
+        const fp = ficheDe(dn), tRc = r.combat.date || Core.dateRc(text);
+        if (!fp || fp.tdp == null || !fp.unite || !Core.TDP_BASE[fp.unite]) ponte = { inconnue: true };
+        else if (!tRc) ponte = { sansDate: true };
+        else {
+          const depuis = Math.max(0, (Date.now() - tRc) / 1000);
+          const parH = Core.rythmePonte(fp.tdp, Core.TDP_BASE[fp.unite]) * 3600;
+          ponte = { n: Math.floor(parH * depuis / 3600), unite: fp.unite, depuis, parH, tdp: fp.tdp };
+          if (ponte.n > 0) {
+            const m = Object.fromEntries(ennemi); m[ponte.unite] = (m[ponte.unite] || 0) + ponte.n;
+            ennemi = Object.keys(Core.UNITS).filter((c) => m[c]).map((c) => [c, m[c]]);
+          }
+        }
+      }
       html += `<div class="card combat"><div class="tete"><h4>⚔️ ${esc(dn)}${place ? ' · ' + LIEU_LONG[place] : ''}${h.colonie ? ' (colonie)' : ''}</h4>
         <span class="mut">${memeNom(an, me) || an === 'Moi' ? '' : esc(an) + ' · '}${nbT} tour${nbT > 1 ? 's' : ''}${r.oneShot ? ' · one-shot' : ''}</span></div>`;
-      html += `<div class="mut">Défense : ${armyStr(r.combat.defenders)}</div>`;
+      html += `<div class="mut">Défense${ponte && ponte.n > 0 ? ' au RC' : ''} : ${armyStr(r.combat.defenders)}</div>`;
+      if (ponte && ponte.n > 0) html += `<div class="ponte-note">🥚 <b>Ponte comptée : +${fmt(ponte.n)} ${L(ponte.unite)}</b> depuis l’heure du RC (${Core.dureeTexte(ponte.depuis)} à ${fmt(ponte.parH)} ${L(ponte.unite)}/h, TdP ${ponte.tdp}). Défense estimée maintenant : ${armyStr(ennemi)}. <span class="mut">Les propositions en tiennent compte ; désactivable dans les réglages.</span></div>`;
+      else if (ponte && ponte.n === 0) html += '<div class="mut">🥚 Ponte comptée : RC trop récent, rien à ajouter.</div>';
+      else if (ponte && ponte.inconnue) html += '<div class="mut">🥚 Ponte non comptée : TdP ou unité pondue inconnue dans sa fiche (calcule-la dans VA &amp; TdP avec deux RC).</div>';
+      else if (ponte && ponte.sansDate) html += '<div class="mut">🥚 Ponte non comptée : date du RC introuvable.</div>';
 
       // niveaux du défenseur lus dans ce rapport
       const rp = pd && place ? pd.res[place] : null;
@@ -1431,7 +1466,7 @@ window.SIMUOPTI_LITE = true;
         const cibles = (cfg.xpUnits && cfg.xpUnits.length) ? cfg.xpUnits : ['T'];
         const frappeurs = cibles.filter((u) => u !== 'JSN' && Core.UNITS[u].att > 1);
         const illimite = [['JSN', 1e15], ...(frappeurs.length ? frappeurs : ['T']).map((u) => [u, 1e15])];
-        const opt = (avail, tours) => Core.optimize({ enemy: r.combat.defenders, eArmes: r.defArmes, eMult, my: res.my, avail, cibles, tours });
+        const opt = (avail, tours) => Core.optimize({ enemy: ennemi, eArmes: r.defArmes, eMult, my: res.my, avail, cibles, tours });
         const o0 = opt(illimite, 1);
         html += `<div class="ligne-vie"><span>Vie à battre (×${f2(eMult)}${exactV ? '' : ', plafond'} × sécurité ${f2(res.my.secu || 1.02)})</span><b>${fmt(o0.vieABattre)}</b></div>`;
         html += `<details class="det"><summary>Lecture du RC (tours, armes, bouclier)</summary>${lect}</details>`;
@@ -1446,7 +1481,7 @@ window.SIMUOPTI_LITE = true;
         if (rr) { const c = rr.combos.length === 1 ? rr.combos[0] : rr.hyp; if (c) { niv = c.niveau; if (dB == null) dB = c.bouclier; } }
         if (dB == null) dB = Math.round(((lieuSim === 'terrain' ? eMult : eMult - (lieuSim === 'dome' ? 0.1 : 0.3)) - 1) * 10);
         simBase = {
-          def: Object.fromEntries(r.combat.defenders),
+          def: Object.fromEntries(ennemi),
           tech: { aB: res.my.bouclier, aA: res.my.armes, aC: cfg.cochenille || 0, dB, dA: r.defArmes, dC: 0 },
           lieu: { type: lieuSim, dome: lieuSim === 'dome' ? (niv ?? 0) : (cfg.sim && cfg.sim.lieu ? cfg.sim.lieu.dome : 0), loge: lieuSim === 'loge' ? (niv ?? 0) : (cfg.sim && cfg.sim.lieu ? cfg.sim.lieu.loge : 0) },
           nom: dn,
