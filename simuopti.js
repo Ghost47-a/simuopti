@@ -718,7 +718,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.17.3'; // aligné sur @version
+  const VERSION = '1.17.4'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -990,6 +990,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .reglages .ponte input{width:auto!important}
   #simuopti-ui .niv-copie{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
   #simuopti-ui .niv-copie pre.copie{flex:1;min-width:0;margin:0;overflow-x:auto;white-space:pre}
+  #simuopti-ui .depart-est{margin-top:5px;color:var(--ko);font-weight:600}
   #simuopti-ui .ponte-note{margin:6px 0;padding:7px 10px;border-radius:8px;background:var(--carte2);border:1px solid var(--ligne2);font-size:12.5px}
   #simuopti-ui .combat .tete,#simuopti-ui .prop .tete{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
   #simuopti-ui .combat .tete h4,#simuopti-ui .prop .tete h4{margin:0}
@@ -1469,7 +1470,11 @@ window.SIMUOPTI_LITE = true;
       html += `<div class="card combat"><div class="tete"><h4>⚔️ ${esc(dn)}${place ? ' · ' + LIEU_LONG[place] : ''}${h.colonie ? ' (colonie)' : ''}</h4>
         <span class="mut">${memeNom(an, me) || an === 'Moi' ? '' : esc(an) + ' · '}${nbT} tour${nbT > 1 ? 's' : ''}${r.oneShot ? ' · one-shot' : ''}</span></div>`;
       html += `<div class="mut">Défense${ponte && ponte.n > 0 ? ' au RC' : ''} : ${armyStr(r.combat.defenders)}</div>`;
-      if (ponte && ponte.n > 0) html += `<div class="ponte-note">🥚 <b>Ponte comptée : +${fmt(ponte.n)} ${L(ponte.unite)}</b> depuis l’heure du RC (${Core.dureeTexte(ponte.depuis)} à ${fmt(ponte.parH)} ${L(ponte.unite)}/h, TdP ${ponte.tdp}). Défense estimée maintenant : ${armyStr(ennemi)}. <span class="mut">Les propositions en tiennent compte ; désactivable dans les réglages.</span></div>`;
+      // départ estimé de son armée, calculé dans VA & TdP avec les deux RC (enregistré dans sa fiche)
+      const fDep = dn !== 'Moi' && !memeNom(dn, me) ? ficheDe(dn) : null;
+      const depart = fDep && fDep.depart ? `<div class="depart-est">🕐 Départ estimé de son armée : ${new Date(fDep.depart).toLocaleString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}${Date.now() > fDep.depart ? ` (il y a ${Core.dureeTexte((Date.now() - fDep.depart) / 1000)})` : ''}</div>` : '';
+      if (ponte && ponte.n > 0) html += `<div class="ponte-note">🥚 <b>Ponte comptée : +${fmt(ponte.n)} ${L(ponte.unite)}</b> depuis l’heure du RC (${Core.dureeTexte(ponte.depuis)} à ${fmt(ponte.parH)} ${L(ponte.unite)}/h, TdP ${ponte.tdp}). Défense estimée maintenant : ${armyStr(ennemi)}. <span class="mut">Les propositions en tiennent compte ; désactivable dans les réglages.</span>${depart}</div>`;
+      else if (depart) html += `<div class="ponte-note">${depart}</div>`;
       else if (ponte && ponte.n === 0) html += '<div class="mut">🥚 Ponte comptée : RC trop récent, rien à ajouter.</div>';
       else if (ponte && ponte.inconnue) html += '<div class="mut">🥚 Ponte non comptée : TdP ou unité pondue inconnue dans sa fiche (calcule-la dans VA &amp; TdP avec deux RC).</div>';
       else if (ponte && ponte.sansDate) html += '<div class="mut">🥚 Ponte non comptée : date du RC introuvable.</div>';
