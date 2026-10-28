@@ -187,7 +187,7 @@ window.SIMUOPTI_LITE = true;
       if (dr) {
         r.facteurReplique = FACTEURS.reduce((b, f) => (Math.abs(f - dr) < Math.abs(b - dr) ? f : b), 1);
         if (Math.abs(r.facteurReplique - dr) > 0.02) r.warn.push(`Réplique à ×${dr.toFixed(3)} de la défense : unité inconnue ou stats différentes.`);
-        else if (r.oneShot && r.facteurReplique !== 0.1) r.warn.push(`One-shot avec réplique ×${r.facteurReplique} (et non ÷10) : victoire pas assez écrasante.`);
+        else if (r.oneShot && r.facteurReplique !== 0.1) r.warn.push(`One-shot avec réplique ×${r.facteurReplique} (et non ÷10) : frappe sous le triple de la vie brute des défenseurs.`);
       }
       for (const rd of r.rounds) if (rd.attCheck && Math.abs(rd.attCheck - 1) > 0.002 && rd.n === 1)
         r.warn.push(`Attaque de base ≠ calcul (${(rd.attCheck * 100).toFixed(2)} %) : unité inconnue ou stats différentes.`);
@@ -375,36 +375,45 @@ window.SIMUOPTI_LITE = true;
     // gain de puissance d'une évolution (Δvie + Δatt + Δdéf), pour classer les unités à faire évoluer
     const GAIN = Object.fromEntries(Object.entries(EVOL).map(([f, t]) => [f, (UNITS[t].vie - UNITS[f].vie) + (UNITS[t].att - UNITS[f].att) + (UNITS[t].def - UNITS[f].def)]));
 
-    /** Pertes : la réplique tue dans l'ordre de l'armée, chaque unité a sa vie × bouclier. */
-    function lossesByDamage(army, dmg, bB) {
-      const out = [];
-      for (const [c, n] of army) {
-        const per = UNITS[c].vie * bB;
-        const k = Math.min(n, Math.floor(dmg / per));
-        dmg -= k * per;
-        out.push([c, k]);
-        if (k < n) dmg = 0;
-      }
-      return out;
+    /**
+     * Dégâts reçus, règle du jeu (vérifiée au chiffre près sur 25 rapports et 4 simulations du jeu) : les dégâts tuent
+     * dans l'ordre de l'armée (vie × bouclier ou lieu par unité) et le reste blesse l'unité suivante, qui ne compte plus
+     * que pour la fraction de vie qui lui reste : elle frappe et défend à ce prorata au tour suivant.
+     * Renvoie l'armée restante, en unités fractionnaires.
+     */
+    function blesser(army, dmg, mult) {
+      return army.map(([c, n]) => { const per = UNITS[c].vie * mult; const k = Math.min(n, Math.max(0, dmg) / per); dmg -= k * per; return [c, n - k]; });
     }
+    const VIDE = 1e-9;
+    const totalU = (a) => a.reduce((x, [, n]) => x + n, 0);
+    /** Unités comptées par le jeu : une unité entamée compte pour une. */
+    const entieres = (n) => Math.ceil(n - 1e-6);
+    /** Pertes affichées entre deux états d'une même armée, par type. */
+    const pertesEntre = (avant, apres) => avant.map(([c, n], i) => [c, entieres(n) - entieres(apres[i][1])]);
 
-    /** Déroulé estimé du combat, mêmes règles que le jeu : nombre de tours, pertes de l'attaquant, vainqueur. */
+    /**
+     * Réplique quand tout le défenseur meurt au 1er tour (règle du jeu, vérifiée sur 29 combats) : selon la frappe
+     * (bonus d'armes compris) comparée à la vie brute des défenseurs (nombre × vie de base, sans bouclier ni lieu) :
+     * triple ou plus → ×0,1 (« Écrasante victoire »), double → ×0,3 (« raz-de-marée »), +50 % → ×0,5, sinon entière.
+     */
+    const PALIERS_REPLIQUE = [[3, 0.1], [2, 0.3], [1.5, 0.5]];
+    const facteurOneShot = (frappe, vieBrute) => { for (const [r, f] of PALIERS_REPLIQUE) if (frappe >= vieBrute * r) return f; return 1; };
+
+    /** Déroulé estimé du combat, mêmes règles que le jeu : nombre de tours, pertes et reste de l'attaquant, vainqueur. */
     function deroule(army, enemy, { bA, bB, eMult, dAm }) {
       let A = army.map(([c, n]) => [c, n]), D = enemy.map(([c, n]) => [c, n]);
-      const tot = (a) => a.reduce((x, [, n]) => x + n, 0);
       const pertes = {};
       let tours = 0;
-      while (tours < 100 && tot(A) > 0 && tot(D) > 0) {
+      while (tours < 100 && totalU(A) > VIDE && totalU(D) > VIDE) {
         tours++;
-        const kD = lossesByDamage(D, sumBy(A, 'att') * bA, eMult);
-        // tous les défenseurs tués au 1er tour : réplique ÷ 10
-        const fact = tours === 1 && kD.reduce((x, [, k]) => x + k, 0) >= tot(D) ? 0.1 : 1;
-        const kA = lossesByDamage(A, sumBy(D, 'def') * fact * dAm, bB);
-        D = D.map(([c, n], i) => [c, n - kD[i][1]]);
-        A = A.map(([c, n], i) => [c, n - kA[i][1]]);
-        for (const [c, k] of kA) if (k) pertes[c] = (pertes[c] || 0) + k;
+        const D2 = blesser(D, sumBy(A, 'att') * bA, eMult);
+        // tous les défenseurs tués au 1er tour : réplique réduite selon la frappe (×0,1 dès le triple de sa vie brute)
+        const fact = tours === 1 && totalU(D2) <= VIDE ? facteurOneShot(sumBy(A, 'att') * bA, sumBy(D, 'vie')) : 1;
+        const A2 = blesser(A, sumBy(D, 'def') * fact * dAm, bB);
+        for (const [c, k] of pertesEntre(A, A2)) if (k) pertes[c] = (pertes[c] || 0) + k;
+        A = A2; D = D2;
       }
-      return { tours, gagne: tot(D) === 0 && tot(A) > 0, pertes };
+      return { tours, gagne: totalU(D) <= VIDE && totalU(A) > VIDE, pertes, reste: Object.fromEntries(A) };
     }
 
     /**
@@ -427,8 +436,11 @@ window.SIMUOPTI_LITE = true;
       let jsnNeed = Math.ceil(replique / (UNITS.JSN.vie * bB));
       let jsnMarge = Math.ceil(jsnNeed * tampon);
       const jsnTour1 = jsnNeed;
+      // un tour : frappe ≥ vie à battre, et ≥ triple de sa vie brute pour une réplique ÷10 (sinon ×0,3, ×0,5 ou entière)
+      const defBase = sumBy(enemy, 'def'), vieBrute = sumBy(enemy, 'vie');
+      const attVie = vieABattre / bA, attEcrase = PALIERS_REPLIQUE[0][0] * vieBrute * secu / bA;
       // deux tours : frappe du 1er tour + frappe du 2e (moins les JSN tuées au 1er) ≥ vie
-      const attReq = tours === 2 ? (vieABattre / bA + jsnTour1 * UNITS.JSN.att) / 2 : vieABattre / bA;
+      const attReq = tours === 2 ? (vieABattre / bA + jsnTour1 * UNITS.JSN.att) / 2 : Math.max(attVie, attEcrase);
       const M = enemy.reduce((s, [c, n]) => s + n * UNITS[c].xp, 0);
       const K = 43.56 * (1 + (my.cochenille || 0) / 10) * (1 + eArmes / 10) * eMult / bB / bA;
       const Nmax = M * Math.sqrt(K / 100);
@@ -459,14 +471,14 @@ window.SIMUOPTI_LITE = true;
       }
       // deux tours : JSN en plus pour la réplique du 2e tour (défenseurs qui survivent au 1er)
       if (tours === 2) {
-        const kD = lossesByDamage(enemy, att * bA, eMult * secu);
-        const defReste = enemy.reduce((x, [c, n], i) => x + (n - kD[i][1]) * UNITS[c].def, 0);
+        const defReste = sumBy(blesser(enemy, att * bA, eMult * secu), 'def');
         jsnNeed += Math.ceil(defReste * dAm / (UNITS.JSN.vie * bB));
         jsnMarge = Math.ceil(jsnNeed * tampon);
         const ajout = Math.min(have.JSN, jsnMarge) - send.JSN;
         if (ajout > 0) { send.JSN += ajout; att += ajout * UNITS.JSN.att; }
       }
-      let passe = att >= attReq;
+      // un tour : il passe dès que la vie est battue ; l'écrasante victoire (÷10) demande en plus attEcrase
+      let passe = tours === 2 ? att >= attReq : att >= attVie;
       // 3) marge sous 100 % d'XP : partagée à parts égales (en poids XP) entre les unités choisies
       if (passe) {
         const fill = order.filter((c) => UNITS[c].pex && cibles.includes(c));
@@ -485,15 +497,22 @@ window.SIMUOPTI_LITE = true;
       }
       const army = order.filter((c) => send[c] > 0).map((c) => [c, send[c]]);
       const pct = Math.min(100, xpPct({ enemy, sent: army, eArmes, eMult, aArmes: my.armes, aBouclier: my.bouclier, cochenille: my.cochenille || 0 }));
-      let losses, toursEstimes = 1;
+      let losses, reste, toursEstimes = 1;
+      // frappe sous le triple de sa vie brute (troupes limitées) : réplique ×0,3, ×0,5 ou entière, pertes bien plus lourdes
+      const ecrase = tours === 2 || att >= attEcrase;
+      const facteurReel = ecrase ? 0.1 : facteurOneShot(att * bA, vieBrute);
+      const repliqueReelle = tours === 2 || ecrase ? replique : defBase * dAm * facteurReel;
       if (tours === 2) {
         const est = deroule(army, enemy, { bA, bB, eMult: eMult * secu, dAm });
         passe = passe && est.gagne && est.tours <= 2;
-        losses = est.pertes; toursEstimes = est.tours;
-      } else losses = Object.fromEntries(lossesByDamage(army, replique, bB));
+        losses = est.pertes; reste = est.reste; toursEstimes = est.tours;
+      } else {
+        const apres = blesser(army, repliqueReelle, bB);
+        losses = Object.fromEntries(pertesEntre(army, apres)); reste = Object.fromEntries(apres);
+      }
       const rows = army.map(([c, n]) => {
-        const surv = n - (losses[c] || 0);
-        const evol = UNITS[c].pex && passe ? Math.floor(surv * pct / 100) : 0;
+        const surv = reste[c] ?? n - (losses[c] || 0); // survivants fractionnaires : l'unité blessée n'évolue pas
+        const evol = UNITS[c].pex && passe ? Math.floor(surv * pct / 100 + 1e-7) : 0;
         return { c, dispo: have[c], envoi: n, pertes: losses[c] || 0, evol, vers: EVOL[c] || null };
       });
       const pertesHorsJSN = rows.filter((r) => r.c !== 'JSN').reduce((s, r) => s + r.pertes, 0);
@@ -501,8 +520,11 @@ window.SIMUOPTI_LITE = true;
         rows, passe, att, attReq, vieABattre, replique, jsnNeed, jsnMarge, pct, Nmax, tours, toursEstimes,
         frappe: att * bA, vieAdverse: vieABattre / secu,
         frappe2: (2 * att - UNITS.JSN.att * Math.min(send.JSN, jsnTour1)) * bA,
+        // écrasante victoire : réplique ÷10 seulement si la frappe atteint le triple de sa vie brute
+        ecrase, facteurReel, vieBrute, frappeEcrase: attEcrase * bA, repliqueReelle,
+        manqueEcrase: ecrase ? 0 : (attEcrase - att) * bA,
         jsnPerdues: losses.JSN || 0,
-        manqueAtt: passe ? 0 : attReq - att,
+        manqueAtt: passe ? 0 : (tours === 2 ? attReq : attVie) - att,
         jsnManque: Math.max(0, jsnNeed - have.JSN), pertesHorsJSN,
         gain: rows.reduce((s, r) => s + r.evol * (GAIN[r.c] || 0), 0),
       };
@@ -515,6 +537,85 @@ window.SIMUOPTI_LITE = true;
       A: ['Artilleuse', 'Artilleuses'], AE: ['Artilleuse d’élite', 'Artilleuses d’élites'], SE: ['Soldate d’élite', 'Soldates d’élites'],
       T: ['Tank', 'Tanks'], TE: ['Tank d’élite', 'Tanks d’élites'], Tu: ['Tueuse', 'Tueuses'], TuE: ['Tueuse d’élite', 'Tueuses d’élites'],
     };
+    /* ---------------- Simulateur de combat ----------------
+     * Règles mesurées sur les rapports et le simulateur du jeu (25 rapports et 4 simulations identiques au chiffre près) :
+     *  - dégâts affichés = arrondi supérieur de la base, et de base × armes/10 ;
+     *  - les dégâts tuent dans l'ordre de l'armée ; le reste blesse l'unité suivante, qui frappe et défend ensuite au
+     *    prorata de sa vie restante (rien n'est perdu) ; tués affichés = unités entamées avant − entamées après ;
+     *  - les deux camps frappent en même temps, avec les unités vivantes au début du tour ;
+     *  - si tout le défenseur meurt au 1er tour, sa réplique est réduite selon la frappe comparée à sa vie brute :
+     *    ×0,1 au triple, ×0,3 au double, ×0,5 à +50 %, sinon entière (voir facteurOneShot) ; aux autres tours, entière ;
+     *  - XP de l'attaquant vainqueur : même % pour toutes les unités qui évoluent, appliqué aux survivants
+     *    fractionnaires (l'unité blessée n'évolue pas). */
+    const nomUnite = (c, n) => NOMS[c][n > 1 ? 1 : 0];
+    const ceilAff = (x) => Math.ceil(x - 1e-6);
+    function multLieu(bouclier, lieu) {
+      const b = 1 + bouclier / 10;
+      if (!lieu || lieu.type === 'terrain') return b;
+      if (lieu.type === 'dome') return b + 0.1 + 0.05 * (lieu.dome || 0);
+      return b + 0.3 + 0.15 * (lieu.loge || 0);
+    }
+    function simulate({ att, def, tech, lieu }) {
+      const t = Object.assign({ aB: 0, aA: 0, aC: 0, dB: 0, dA: 0, dC: 0 }, tech || {});
+      const order = Object.keys(UNITS);
+      let A = order.map((c) => [c, Math.max(0, Math.floor(att[c] || 0))]);
+      let D = order.map((c) => [c, Math.max(0, Math.floor(def[c] || 0))]);
+      const A0 = A.map((x) => [...x]), D0 = D.map((x) => [...x]);
+      const mA = 1 + t.aB / 10, mD = multLieu(t.dB, lieu);
+      const tues = (avant, apres) => pertesEntre(avant, apres).reduce((s, [, k]) => s + k, 0);
+      const rounds = [];
+      for (let r = 1; r <= 100 && totalU(A) > VIDE && totalU(D) > VIDE; r++) {
+        const aExact = sumBy(A, 'att');
+        const D2 = blesser(D, aExact * (1 + t.aA / 10), mD);
+        const facteur = r === 1 && totalU(D2) <= VIDE ? facteurOneShot(aExact * (1 + t.aA / 10), sumBy(D, 'vie')) : 1;
+        const dExact = sumBy(D, 'def') * facteur;
+        const A2 = blesser(A, dExact * (1 + t.dA / 10), mA);
+        rounds.push({ aBase: ceilAff(aExact), aBonus: ceilAff(aExact * t.aA / 10), kD: tues(D, D2), dBase: ceilAff(dExact), dBonus: ceilAff(dExact * t.dA / 10), kA: tues(A, A2), facteur });
+        D = D2; A = A2;
+      }
+      const aVivant = totalU(A) > VIDE, dVivant = totalU(D) > VIDE;
+      const issue = aVivant && !dVivant ? 'att' : !aVivant && dVivant ? 'def' : !aVivant && !dVivant ? 'nul' : 'egal';
+      let xp = null;
+      if (issue === 'att') {
+        const pct = xpPct({ enemy: D0.filter(([, n]) => n > 0), sent: A0.filter(([, n]) => n > 0), eArmes: t.dA, eMult: mD, aArmes: t.aA, aBouclier: t.aB, cochenille: t.aC });
+        const f = Math.min(1, pct / 100);
+        const evol = A.filter(([c, n]) => UNITS[c].pex && n > VIDE)
+          .map(([c, n]) => [c, Math.floor(n * f + 1e-7)]).filter(([, n]) => n > 0);
+        xp = { pct, evol };
+      }
+      // armées après le combat, comme le jeu les affiche (une unité blessée compte pour une)
+      const apres = Object.fromEntries(A.map(([c, n]) => [c, entieres(n)]));
+      if (xp) for (const [c, n] of xp.evol) { apres[c] -= n; apres[EVOL[c]] = (apres[EVOL[c]] || 0) + n; }
+      return {
+        rounds, issue, oneShot: issue === 'att' && rounds.length === 1, xp, mA, mD,
+        apresAtt: apres, apresDef: Object.fromEntries(D.map(([c, n]) => [c, entieres(n)])),
+        totaux: { aVie: sumBy(A0, 'vie') * mA, aDeg: sumBy(A0, 'att') * (1 + t.aA / 10), dVie: sumBy(D0, 'vie') * mD, dDeg: sumBy(D0, 'def') * (1 + t.dA / 10) },
+        A0, D0,
+      };
+    }
+    const nbFr = (n) => Math.round(n).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
+    function messageSimu(res, position) {
+      const liste = (a) => a.filter(([, n]) => n > 0).map(([c, n]) => `${nbFr(n)} ${nomUnite(c, n)}`).join(', ') + '.';
+      const L = [`Troupes en attaque : ${liste(res.A0)}`, `Troupes en défense : ${liste(res.D0)}`, ''];
+      for (const r of res.rounds) {
+        const a = `${nbFr(r.aBase)} (+ ${nbFr(r.aBonus)})`, d = `${nbFr(r.dBase)} (+ ${nbFr(r.dBonus)})`;
+        if (position === 'def') L.push(`L’ennemie inflige ${a} dégâts à vos fourmis et en tue ${nbFr(r.kD)}.`, `Vous infligez ${d} dégâts et tuez ${nbFr(r.kA)} ennemies.`);
+        else L.push(`Vous infligez ${a} dégâts et tuez ${nbFr(r.kD)} ennemies.`, `L’ennemie inflige ${d} dégâts à vos fourmis et en tue ${nbFr(r.kA)}.`);
+        L.push('');
+      }
+      const gagne = position === 'def' ? res.issue === 'def' : res.issue === 'att';
+      // messages du jeu par palier de réplique ; ceux de ×0,5 et de la réplique entière ne sont pas encore connus
+      const MSG_UN_TOUR = { 0.1: 'Écrasante victoire ! A peine le temps de se dégourdir les pattes qu’ils étaient tous morts ...', 0.3: 'Votre armée a déferlé tel un raz-de-marée, l’ennemi n’a rien pu faire !', 0.5: '(Victoire en un tour : réplique ×0,5.)', 1: '(Victoire en un tour : réplique entière.)' };
+      if (res.issue === 'att') L.push(!res.oneShot ? 'L’adversaire y a cru, mais vous sortez victorieux de ce combat acharné.' : MSG_UN_TOUR[res.rounds[0].facteur]);
+      if (res.issue === 'nul') L.push('Les deux armées se sont entretuées.');
+      if (res.issue === 'egal') L.push('Combat interrompu après 100 tours.');
+      L.push(res.issue === 'nul' || res.issue === 'egal' ? 'Match nul.' : gagne ? 'Vous avez gagné cette bataille !' : 'Vous avez perdu cette bataille !');
+      if (res.xp && res.xp.evol.length && position !== 'def') {
+        L.push('', 'Les unités survivantes ont appris de cette bataille :');
+        for (const [c, n] of res.xp.evol) L.push(`- ${nbFr(n)} ${nomUnite(c, n)} sont devenues des ${NOMS[EVOL[c]][1]}`);
+      }
+      return L.join('\n');
+    }
 
     /* ---------------- VA (formule de FourmiWatch) et TdP ---------------- */
     const T0 = (d) => 637200 * (1 - Math.exp(-d / 350));   // trajet à VA 0, en secondes
@@ -607,6 +708,7 @@ window.SIMUOPTI_LITE = true;
 
     const api = { TAMPON_DEFAUT, rythmePonte, departDepuisRc, dateRc, tdpDepuisRcs, NOMS, T0, trajet, vaDepuisTrajet, dureeLue, dureeTexte, tdp, TDP_BASE, toInt,
       LAB, UNITS, EVOL, GAIN, parseArmyLoose, optimize, parseReports, analyseCombat, analyseText, xpPct, combos, plan, players, sumBy };
+    Object.assign(api, { simulate, messageSimu, multLieu });
     return api;
   })();
 
@@ -616,7 +718,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.16.0'; // aligné sur @version
+  const VERSION = '1.17.0'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -698,8 +800,15 @@ window.SIMUOPTI_LITE = true;
     const j = ficheDe(nom);
     if (!j) return;
     cfg.actif = j.nom; saveCfg(cfg);
+    if (!sauf.includes('sim')) remplirSimFiche(j);
     if (!sauf.includes('va') && ui.remplirVa) ui.remplirVa(j);
     majFiches();
+  }
+  /** Défenseur du simulateur d'après la fiche : dernière défense vue chez lui, ses niveaux (inconnus = 0). */
+  function remplirSimFiche(j) {
+    const s = lireSim();
+    remplirSim({ def: j.defense ? j.defense.armee : {}, tech: { dB: j.bouclier ?? 0, dA: j.armes ?? 0, dC: 0 },
+      lieu: { type: s.lieu.type, dome: j.dome ?? 0, loge: j.loge ?? 0 }, nom: j.nom });
   }
   /** Barre « Fiche », info du simulateur et onglet Joueurs. */
   function majFiches() {
@@ -898,6 +1007,38 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui pre.copie{white-space:pre-wrap;background:var(--champ);border:1px solid var(--ligne);border-radius:8px;padding:7px 9px;font:12px ui-monospace,Consolas,monospace;margin:6px 0;color:var(--or)}
   #simuopti-ui .niv{display:inline-block;min-width:26px;text-align:center;padding:1px 6px;border-radius:6px;font-weight:800}
   #simuopti-ui .niv.ok{background:var(--okf)}#simuopti-ui .niv.warn{background:var(--warnf)}
+  /* ---- Simulateur : même disposition que le simulateur du jeu, aux couleurs du thème ---- */
+  #simuopti-ui .sim{color:var(--texte)}
+  #simuopti-ui .sim fieldset{border:1px solid var(--ligne);border-radius:12px;padding:8px 12px 10px;margin:0 0 10px;background:var(--carte)}
+  #simuopti-ui .sim legend{color:var(--or);font:800 15px system-ui,sans-serif;padding:0 6px}
+  #simuopti-ui .sim legend small{color:var(--mut);font:600 12px system-ui,sans-serif}
+  #simuopti-ui .sim legend small a{color:var(--mut);cursor:pointer;text-decoration:none;padding:2px 4px;border-radius:6px}
+  #simuopti-ui .sim legend small a.on{color:var(--sur);background:var(--bronze);font-weight:800}
+  #simuopti-ui .sim .grille{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:14px}
+  #simuopti-ui .sim table{font-size:13px}
+  #simuopti-ui .sim td,#simuopti-ui .sim th{border:0;padding:2px 3px;vertical-align:middle;color:var(--texte)}
+  #simuopti-ui .sim th{font-weight:800;text-align:center;text-transform:none;letter-spacing:0;font-size:13px;color:var(--or)}
+  #simuopti-ui .sim input.n{width:100%;box-sizing:border-box;background:var(--champ);color:var(--or);border:1px solid var(--ligne2);border-radius:6px;padding:5px 6px;text-align:right;font:700 13px system-ui,sans-serif}
+  #simuopti-ui .sim input.lv{width:52px;background:var(--champ);color:var(--or);border:1px solid var(--ligne2);border-radius:6px;padding:5px 6px;text-align:center;font:700 13px system-ui,sans-serif}
+  #simuopti-ui .sim .nom{text-align:center;white-space:nowrap;font-size:12.5px}
+  #simuopti-ui .sim .fl{cursor:pointer;font-weight:800;user-select:none;padding:0 2px;color:var(--mut)}
+  #simuopti-ui .sim .tot td{text-align:right;font-size:13px;font-weight:700;color:var(--fort);border-top:1px solid var(--ligne)}
+  #simuopti-ui .sim .tot td.c{text-align:center;color:var(--mut);font-weight:600}
+  #simuopti-ui .sim label{font-size:14px;color:var(--texte);margin:4px 0;min-height:30px}
+  #simuopti-ui .sim .fight{display:block;width:100%;min-height:48px;margin:4px 0 10px;background:var(--bronze);color:var(--sur);border:0;border-radius:10px;font:800 16px system-ui,sans-serif;cursor:pointer}
+  #simuopti-ui .sim .fight:hover{filter:brightness(1.08)}
+  #simuopti-ui .sim .rac button{font:600 12.5px system-ui,sans-serif;margin:3px 0;width:100%;min-height:36px;background:transparent;color:var(--texte);border:1px solid var(--ligne2);border-radius:8px;cursor:pointer;padding:4px}
+  #simuopti-ui .sim h3{color:var(--ko);font:800 16px system-ui,sans-serif;margin:10px 0 6px}
+  #simuopti-ui .sim .msg{white-space:pre-wrap;font:13.5px/1.45 system-ui,sans-serif;color:var(--texte);background:var(--carte);border:1px solid var(--ligne);border-radius:12px;padding:10px 12px}
+  #simuopti-ui .sim .msg b{font-weight:800;color:var(--fort)}
+  #simuopti-ui .sim .act{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+  #simuopti-ui .sim .colle{cursor:pointer;font:600 11px system-ui,sans-serif;vertical-align:middle;background:transparent;color:var(--mut);border:1px solid var(--ligne2);border-radius:6px;padding:2px 6px}
+  #simuopti-ui .sim .collebox{background:var(--carte2);border:1px solid var(--ligne2);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:13px}
+  #simuopti-ui .sim .collebox textarea{display:block;width:100%;box-sizing:border-box;height:80px;margin:4px 0;background:var(--champ);color:var(--texte);border:1px solid var(--ligne2);border-radius:6px;font:13px system-ui,sans-serif;padding:5px}
+  #simuopti-ui .sim .collebox [data-collemsg]{color:var(--ko);margin-top:4px}
+  #simuopti-ui .sim .act button{font:600 12.5px system-ui,sans-serif;min-height:36px;background:transparent;color:var(--texte);border:1px solid var(--ligne2);border-radius:8px;cursor:pointer;padding:4px 12px}
+  #simuopti-ui .sim .act button[data-colleok]{background:var(--bronze);color:var(--sur);border-color:var(--bronze);font-weight:800}
+  @media (max-width:760px){#simuopti-ui .sim .grille{grid-template-columns:1fr}}
   /* ---- Fiches joueurs ---- */
   #simuopti-ui .fi-tab tr{cursor:pointer}
   #simuopti-ui .fi-tab tr:hover td{background:var(--carte2)}
@@ -944,6 +1085,7 @@ window.SIMUOPTI_LITE = true;
   function init() {
     const onglets = [['rc', '📜', 'Analyse RC', 'RC'], ['va', '🐜', 'VA &amp; TdP', 'VA·TdP'], ['fiches', '📇', 'Joueurs', 'Joueurs']];
     let sectionSim = '';
+    onglets.splice(1, 0, ['sim', '⚔️', 'Simulateur', 'Simu']); sectionSim = `<section class="vue" data-vue="sim">${vueSim()}</section>`;
     const st = document.createElement('style'); st.textContent = css; racine.appendChild(st);
     const btn = el('<button id="simuopti-ui-btn" type="button">⚔️ SimuOpti</button>');
     panel = el(`<div id="simuopti-ui">
@@ -969,6 +1111,7 @@ window.SIMUOPTI_LITE = true;
     theme(btn);
     if (APP) panel.classList.add('app', 'open'); else fenetre();
     initRc();
+    initSim();
     initVa(); initFiches();
     onglet(cfg.onglet || 'rc');
   }
@@ -1031,7 +1174,6 @@ window.SIMUOPTI_LITE = true;
   }
 
   function onglet(id) {
-    if (LITE && id === 'sim') id = 'rc';
     cfg.onglet = id; saveCfg(cfg);
     panel.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === id));
     panel.querySelectorAll('[data-vue]').forEach((v) => (v.hidden = v.dataset.vue !== id));
@@ -1133,6 +1275,7 @@ window.SIMUOPTI_LITE = true;
       if (!b) return;
       if (b.dataset.copy != null) copier(ui.copieTexte || '', b);
       if (b.dataset.copiearmee != null) copier(b.dataset.copiearmee, b);
+      if (b.dataset.tosim != null && ui.simPrep && ui.simPrep[b.dataset.tosim]) { const sp = ui.simPrep[b.dataset.tosim]; remplirSim(sp); if (sp.nom) choisirFiche(sp.nom, { sauf: ['sim'] }); onglet('sim'); }
     });
     if (cfg.rapport) { ta.value = cfg.rapport; try { render(ta.value, out); } catch (e) { /* rapport illisible */ } }
   }
@@ -1296,6 +1439,18 @@ window.SIMUOPTI_LITE = true;
         if (!reglagesPlaces) { html += '<div data-reglages-slot></div>'; reglagesPlaces = true; }
 
         let simBase = null;
+        // pour « Tester dans le simulateur » : ce défenseur avec les niveaux déduits
+        const lieuSim = place || 'loge';
+        let dB = pd && pd.bouclierLvl != null ? pd.bouclierLvl : null, niv = null;
+        const rr = pd && pd.res[lieuSim];
+        if (rr) { const c = rr.combos.length === 1 ? rr.combos[0] : rr.hyp; if (c) { niv = c.niveau; if (dB == null) dB = c.bouclier; } }
+        if (dB == null) dB = Math.round(((lieuSim === 'terrain' ? eMult : eMult - (lieuSim === 'dome' ? 0.1 : 0.3)) - 1) * 10);
+        simBase = {
+          def: Object.fromEntries(r.combat.defenders),
+          tech: { aB: res.my.bouclier, aA: res.my.armes, aC: cfg.cochenille || 0, dB, dA: r.defArmes, dC: 0 },
+          lieu: { type: lieuSim, dome: lieuSim === 'dome' ? (niv ?? 0) : (cfg.sim && cfg.sim.lieu ? cfg.sim.lieu.dome : 0), loge: lieuSim === 'loge' ? (niv ?? 0) : (cfg.sim && cfg.sim.lieu ? cfg.sim.lieu.loge : 0) },
+          nom: dn,
+        };
 
         const evolTot = (o) => o.rows.reduce((x, y) => x + y.evol, 0);
         const jsnPertes = (o) => (o.rows.find((x) => x.c === 'JSN') || { pertes: 0 }).pertes;
@@ -1311,12 +1466,16 @@ window.SIMUOPTI_LITE = true;
           const frappe = deux ? o.frappe2 : o.frappe, marge = (frappe / o.vieAdverse - 1) * 100;
           hh += `<div class="mut">🛡️ JSN tampon : ${fmt(o.jsnNeed)} minimum${deux ? ' pour les deux répliques' : ''} + <b>${fmt(o.jsnMarge - o.jsnNeed)}</b> de marge (${cfg.tampon ?? Core.TAMPON_DEFAUT} %) = ${fmt(o.jsnMarge)}</div>`;
           hh += `<div class="mut">Force de frappe${deux ? ' sur les deux tours' : ''} ${fmt(frappe)} · vie adverse ${fmt(o.vieAdverse)} <span class="${marge >= 0 ? 'ok' : 'warn'}">(${marge >= 0 ? '✓ +' : '✗ '}${f2(marge)} %)</span></div>`;
+          const fx = (f) => (f === 1 ? 'entière' : '×' + String(f).replace('.', ','));
+          if (!deux && o.ecrase) hh += `<div class="mut">✓ Réplique ÷10 (écrasante victoire) : frappe ≥ 3 × sa vie brute (${fmt(o.vieBrute)})${o.frappeEcrase > o.vieABattre ? ' <b>— c’est ce triple qui fixe la taille de l’armée</b>, pas sa vie réelle' : ''}.</div>`;
+          if (!deux && !o.ecrase) hh += `<div class="estimation">⚠️ Frappe trop faible pour une écrasante victoire : il passe, mais avec ${f2(frappe / o.vieBrute)} × sa vie brute (il faut 3 ×) sa réplique sera <b>${fx(o.facteurReel)}</b> au lieu de ÷10 (${fmt(o.repliqueReelle)} de dégâts au lieu de ${fmt(o.replique)}), donc bien plus de pertes. Ajoute ${fmt(o.manqueEcrase)} de frappe (≈ ${fmt(o.manqueEcrase / (1 + res.my.armes / 10) / Core.UNITS.T.att)} Tk).</div>`;
           if (o.jsnManque) hh += `<div class="warn">Il te manque ${fmt(o.jsnManque)} JSN pour encaisser la réplique : d’autres unités vont mourir.</div>`;
           if (o.pertesHorsJSN) hh += `<div class="warn">${fmt(o.pertesHorsJSN)} unités autres que des JSN meurent.</div>`;
           if (o.pct < 99.9) hh += `<div class="mut">XP partielle : ce mélange est déjà le plus léger qui passe ${enT} avec ces unités.</div>`;
           if (deux && o.toursEstimes === 1) hh += '<div class="mut">Avec ce mélange il passe finalement en un tour.</div>';
           if (deux && ref) hh += `<div class="gains"><div class="ok"><small>Évolutions en plus</small><b>+${fmt(evolTot(o) - evolTot(ref))}</b></div><div class="ko"><small>JSN perdues en plus</small><b>+${fmt(o.jsnPerdues - jsnPertes(ref))}</b></div></div>`;
           hh += `<div class="boutons"><button class="b grand${deux ? '' : ' contour'}" type="button" data-copiearmee="${esc(texteArmee(o.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée ${deux ? 'en 2 tours' : 'en 1 tour'}${avecStock ? ' (mes troupes)' : ''}</button>`;
+          if (simBase) { ui.simPrep[cle] = Object.assign({ att: Object.fromEntries(o.rows.map((x) => [x.c, x.envoi])) }, simBase); hh += `<button class="b alt" type="button" data-tosim="${cle}">⚔️ Tester dans le simulateur</button>`; }
           return hh + '</div></div>';
         };
         // deux tours : seulement si le one-shot n'atteint pas 100 % d'XP et que plus d'unités évoluent
@@ -1352,6 +1511,181 @@ window.SIMUOPTI_LITE = true;
   /** « 456 Jeunes Soldates Naines, 1 450 Artilleuses » : relisible par SimuOpti (collage d'une armée). */
   const texteArmee = (rows) => rows.filter(([, n]) => n > 0).map(([c, n]) => `${nombreAff(n)} ${Core.NOMS[c][n > 1 ? 1 : 0]}`).join(', ');
   const memeNom = (a, b) => !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase();
+
+  /* ============================ Onglet Simulateur ============================ */
+  function vueSim() {
+    const lignes = ORDER.map((c) => `<tr>
+        <td><input class="n" data-sa="${c}" inputmode="numeric" value="0"></td>
+        <td class="fl" data-cp="${c}" data-dir="toA" title="Copier la valeur du défenseur">‹</td>
+        <td class="nom">${Core.NOMS[c][0]}</td>
+        <td class="fl" data-cp="${c}" data-dir="toD" title="Copier la valeur de l’attaquant">›</td>
+        <td><input class="n" data-sd="${c}" inputmode="numeric" value="0"></td></tr>`).join('');
+    return `<div class="sim">
+      <div data-simfiche></div>
+      <div class="grille">
+        <fieldset><legend>Armées <small>: <a data-av class="on">Avant Combat</a> / <a data-ap>Après Combat</a></small></legend>
+          <table>
+            <tr><th style="width:34%">Attaquant <button type="button" class="colle" data-coller="att" title="Coller une armée côté attaquant">📋 Coller</button></th><th></th><th class="fl" data-swap title="Échanger les deux armées">‹ ›</th><th></th><th style="width:34%"><button type="button" class="colle" data-coller="def" title="Coller une armée côté défenseur">📋 Coller</button> Défenseur</th></tr>
+            ${lignes}
+            <tr class="tot"><td data-tva>0</td><td></td><td class="c">❤ Vie</td><td></td><td data-tvd>0</td></tr>
+            <tr class="tot"><td data-tda>0</td><td></td><td class="c">⚔ Dégât</td><td></td><td data-tdd>0</td></tr>
+          </table>
+          <div class="collebox" data-collebox hidden>
+            <b data-colletitre></b>
+            <textarea data-colleta placeholder="Colle ici l’armée : page Armée, rapport de combat ou liste « 456 Jeunes Soldates Naines, 1 450 Artilleuses »"></textarea>
+            <div class="act"><button type="button" data-colleok>✓ Remplir</button><button type="button" data-collenon>Annuler</button></div>
+            <div data-collemsg></div>
+          </div>
+        </fieldset>
+        <div>
+          <fieldset><legend>Technologies</legend>
+            <table>
+              <tr><th>Attaquant</th><th></th><th>Défenseur</th></tr>
+              <tr><td><input class="lv" data-t="aB" value="0"></td><td class="nom">Bouclier Thoracique</td><td><input class="lv" data-t="dB" value="0"></td></tr>
+              <tr><td><input class="lv" data-t="aA" value="0"></td><td class="nom">Armes</td><td><input class="lv" data-t="dA" value="0"></td></tr>
+              <tr><td><input class="lv" data-t="aC" value="0"></td><td class="nom">Etable à cochenilles</td><td><input class="lv" data-t="dC" value="0"></td></tr>
+            </table>
+          </fieldset>
+          <fieldset><legend>Lieu</legend>
+            <label><input type="radio" name="simlieu" value="terrain"> Terrain de chasse</label>
+            <label><input type="radio" name="simlieu" value="dome"> Fourmilière <span style="margin-left:auto">› <input class="lv" data-l="dome" value="0"></span></label>
+            <label><input type="radio" name="simlieu" value="loge" checked> Loge Impériale <span style="margin-left:auto">› <input class="lv" data-l="loge" value="0"></span></label>
+          </fieldset>
+          <fieldset><legend>Votre Position</legend>
+            <label style="display:inline-flex;margin-right:12px"><input type="radio" name="simpos" value="att" checked> Attaquant</label>
+            <label style="display:inline-flex"><input type="radio" name="simpos" value="def"> Défenseur</label>
+          </fieldset>
+          <button type="button" class="fight" data-fight>Fight !</button>
+          <fieldset class="rac"><legend>Raccourcis</legend>
+            <button type="button" data-mine>Mon armée → attaquant</button>
+            <button type="button" data-mytech>Mes niveaux → attaquant</button>
+            <button type="button" data-vider>Tout vider</button>
+          </fieldset>
+        </div>
+      </div>
+      <h3 data-titre>Message que recevrait l'attaquant:</h3>
+      <div class="msg" data-msg><span class="mut">Remplis les armées puis clique sur « Fight ! ».</span></div>
+      <div class="act" data-acts hidden><button type="button" data-cmsg>📋 Copier le message</button><button type="button" data-amsg>🔍 Analyser ce message</button></div>
+    </div>`;
+  }
+  function lireSim() {
+    const v = panel.querySelector('[data-vue="sim"]');
+    const att = {}, def = {}, tech = {};
+    v.querySelectorAll('[data-sa]').forEach((i) => (att[i.dataset.sa] = Core.toInt(i.value)));
+    v.querySelectorAll('[data-sd]').forEach((i) => (def[i.dataset.sd] = Core.toInt(i.value)));
+    v.querySelectorAll('[data-t]').forEach((i) => (tech[i.dataset.t] = parseFloat(String(i.value).replace(',', '.')) || 0));
+    const type = (v.querySelector('[name=simlieu]:checked') || {}).value || 'loge';
+    const lieu = { type, dome: Core.toInt(v.querySelector('[data-l=dome]').value), loge: Core.toInt(v.querySelector('[data-l=loge]').value) };
+    const pos = (v.querySelector('[name=simpos]:checked') || {}).value || 'att';
+    return { att, def, tech, lieu, pos };
+  }
+  function remplirSim(s) {
+    const v = panel.querySelector('[data-vue="sim"]');
+    if (s.att) v.querySelectorAll('[data-sa]').forEach((i) => (i.value = nombreAff(s.att[i.dataset.sa] || 0)));
+    if (s.def) v.querySelectorAll('[data-sd]').forEach((i) => (i.value = nombreAff(s.def[i.dataset.sd] || 0)));
+    if (s.tech) v.querySelectorAll('[data-t]').forEach((i) => { if (s.tech[i.dataset.t] != null) i.value = s.tech[i.dataset.t]; });
+    if (s.lieu) {
+      const r = v.querySelector(`[name=simlieu][value="${s.lieu.type}"]`); if (r) r.checked = true;
+      if (s.lieu.dome != null) v.querySelector('[data-l=dome]').value = s.lieu.dome;
+      if (s.lieu.loge != null) v.querySelector('[data-l=loge]').value = s.lieu.loge;
+    }
+    if (s.pos) { const r = v.querySelector(`[name=simpos][value="${s.pos}"]`); if (r) r.checked = true; }
+    ui.simNom = s.nom || ui.simNom;
+    majTotaux(); garderSim(); majFiches();
+  }
+  /** Armée collée dans le simulateur ; dans un rapport de combat, on garde la ligne du bon camp. */
+  function armeeCollee(texte, cote) {
+    const m = String(texte || '').match(cote === 'def' ? /Troupes en d[ée]fense\s*:([^\n]*)/i : /Troupes en attaque\s*:([^\n]*)/i);
+    return Core.parseArmyLoose(m ? m[1] : texte);
+  }
+  function garderSim() { const s = lireSim(); s.nom = ui.simNom; cfg.sim = s; saveCfg(cfg); }
+  function majTotaux() {
+    const v = panel.querySelector('[data-vue="sim"]');
+    const s = lireSim();
+    const A = ORDER.map((c) => [c, s.att[c] || 0]), D = ORDER.map((c) => [c, s.def[c] || 0]);
+    const mA = 1 + s.tech.aB / 10, mD = Core.multLieu(s.tech.dB, s.lieu);
+    v.querySelector('[data-tva]').textContent = fmtUp(Core.sumBy(A, 'vie') * mA);
+    v.querySelector('[data-tda]').textContent = fmtUp(Core.sumBy(A, 'att') * (1 + s.tech.aA / 10));
+    v.querySelector('[data-tvd]').textContent = fmtUp(Core.sumBy(D, 'vie') * mD);
+    v.querySelector('[data-tdd]').textContent = fmtUp(Core.sumBy(D, 'def') * (1 + s.tech.dA / 10));
+  }
+  function initSim() {
+    const v = panel.querySelector('[data-vue="sim"]');
+    const msg = v.querySelector('[data-msg]'), acts = v.querySelector('[data-acts]');
+    let avant = null, apres = null, dernier = '', cote = 'att';
+    const boite = v.querySelector('[data-collebox]');
+    v.addEventListener('input', (e) => { if (e.target.matches('input')) { majTotaux(); garderSim(); } });
+    v.addEventListener('change', (e) => { if (e.target.matches('input[type=radio]')) { majTotaux(); garderSim(); } });
+    v.addEventListener('focusout', (e) => { if (e.target.matches('input.n')) e.target.value = nombreAff(Core.toInt(e.target.value)); });
+    v.addEventListener('focusin', (e) => { if (e.target.matches('input.n')) setTimeout(() => e.target.select(), 0); });
+    v.addEventListener('click', (e) => {
+      const t = e.target;
+      if (t.dataset.cp) {
+        const a = v.querySelector(`[data-sa="${t.dataset.cp}"]`), d = v.querySelector(`[data-sd="${t.dataset.cp}"]`);
+        if (t.dataset.dir === 'toA') a.value = d.value; else d.value = a.value;
+        majTotaux(); garderSim();
+      }
+      if (t.matches('[data-swap]')) {
+        ORDER.forEach((c) => { const a = v.querySelector(`[data-sa="${c}"]`), d = v.querySelector(`[data-sd="${c}"]`); [a.value, d.value] = [d.value, a.value]; });
+        ['B', 'A', 'C'].forEach((k) => { const a = v.querySelector(`[data-t="a${k}"]`), d = v.querySelector(`[data-t="d${k}"]`); [a.value, d.value] = [d.value, a.value]; });
+        majTotaux(); garderSim();
+      }
+      const co = t.closest('[data-coller]');
+      if (co) {
+        cote = co.dataset.coller;
+        boite.hidden = false;
+        boite.querySelector('[data-colletitre]').textContent = cote === 'att' ? 'Armée de l’attaquant' : 'Armée du défenseur';
+        boite.querySelector('[data-collemsg]').textContent = '';
+        const ta = boite.querySelector('[data-colleta]');
+        ta.value = ''; ta.focus();
+        // préremplit avec le presse-papiers quand le navigateur le permet ; sinon on colle à la main
+        try { if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then((x) => { if (x && !ta.value) ta.value = x; }, () => {}); } catch (err) { /* lecture refusée */ }
+      }
+      if (t.matches('[data-collenon]')) boite.hidden = true;
+      if (t.matches('[data-colleok]')) {
+        const a = armeeCollee(boite.querySelector('[data-colleta]').value, cote);
+        if (!a.length) { boite.querySelector('[data-collemsg]').textContent = 'Aucune unité reconnue dans ce texte.'; return; }
+        remplirSim({ [cote]: Object.fromEntries(a) });
+        boite.hidden = true;
+      }
+      if (t.matches('[data-av]') && avant) { remplirSim({ att: avant.att, def: avant.def }); t.classList.add('on'); v.querySelector('[data-ap]').classList.remove('on'); }
+      if (t.matches('[data-ap]') && apres) { remplirSim({ att: apres.att, def: apres.def }); t.classList.add('on'); v.querySelector('[data-av]').classList.remove('on'); }
+    });
+    v.querySelector('[data-fight]').onclick = () => {
+      const s = lireSim();
+      const r = Core.simulate(s);
+      avant = { att: s.att, def: s.def };
+      apres = { att: r.apresAtt, def: r.apresDef };
+      v.querySelector('[data-av]').classList.add('on'); v.querySelector('[data-ap]').classList.remove('on');
+      // en-tête comme sur les rapports du jeu (« Vous attaquez la Loge Impériale de … »)
+      const lieuTxt = { terrain: 'le terrain de chasse', dome: 'la fourmilière', loge: 'la Loge Impériale' }[s.lieu.type];
+      const entete = s.pos === 'def' ? `Simulation attaque votre ${lieuTxt.replace(/^(le|la) /, '')}` : `Vous attaquez ${lieuTxt} de ${ui.simNom || 'Simulation'}`;
+      dernier = `${entete}\n${Core.messageSimu(r, s.pos)}`;
+      v.querySelector('[data-titre]').textContent = `Message que recevrait ${s.pos === 'def' ? 'le défenseur' : "l'attaquant"}:`;
+      // mise en gras des chiffres comme sur le site
+      msg.innerHTML = esc(dernier)
+        .replace(/(infligez?|inflige) ([\d ]+ \(\+ [\d ]+\))/g, '$1 <b>$2</b>')
+        .replace(/(tuez|en tue) ([\d ]+)/g, '$1 <b>$2</b>')
+        .replace(/(Vous avez (?:gagné|perdu) cette bataille !|Match nul\.)/g, '<b>$1</b>')
+        .replace(/sont devenues des (.+)/g, 'sont devenues des <b>$1</b>');
+      if (r.xp) msg.innerHTML += `\n\n<span class="mut">XP : ${f2(r.xp.pct)} % (plafonné à 100 %) · vie défenseur ×${f2(r.mD)}</span>`;
+      acts.hidden = false;
+    };
+    v.querySelector('[data-cmsg]').onclick = (e) => copier(dernier, e.target);
+    v.querySelector('[data-amsg]').onclick = () => {
+      ui.rcTa.value = dernier;
+      cfg.rapport = ui.rcTa.value; saveCfg(cfg);
+      render(ui.rcTa.value, ui.rcOut); onglet('rc');
+    };
+    v.querySelector('[data-mine]').onclick = () => {
+      const a = Core.parseArmyLoose(cfg.armee);
+      if (!a.length) { msg.textContent = 'Ton armée est vide : colle-la dans « Mon armée » (onglet Analyse RC).'; return; }
+      remplirSim({ att: Object.fromEntries(a) });
+    };
+    v.querySelector('[data-mytech]').onclick = () => remplirSim({ tech: { aB: cfg.bouclier || 0, aA: cfg.armes || 0, aC: cfg.cochenille || 0 } });
+    v.querySelector('[data-vider]').onclick = () => { ui.simNom = ''; remplirSim({ att: {}, def: {} }); msg.textContent = ''; acts.hidden = true; avant = apres = null; };
+    if (cfg.sim) remplirSim(cfg.sim); else remplirSim({ tech: { aB: cfg.bouclier || 0, aA: cfg.armes || 0, aC: cfg.cochenille || 0 } });
+  }
 
 
   /* ============================ Onglet VA & TdP ============================ */
@@ -1567,6 +1901,7 @@ window.SIMUOPTI_LITE = true;
   /* ============================ Onglet Joueurs (fiches) ============================ */
   function vueFiches() {
     let quoi = 'l’onglet VA &amp; TdP';
+    quoi = 'le simulateur et ' + quoi;
     return `
       <div class="card"><h4>📇 Fiches joueurs</h4>
         <div class="sous">Remplies toutes seules par les autres onglets. Touche un joueur pour le choisir : sa fiche remplit ${quoi}.</div>
@@ -1581,6 +1916,7 @@ window.SIMUOPTI_LITE = true;
     const filtre = q('[data-fi=filtre]');
     const champs = [['armes', 'Armes'], ['bouclier', 'Bouclier'], ['dome', 'Dôme'], ['loge', 'Loge'], ['va', 'VA'], ['tdp', 'TdP'], ['stock', 'Déjà chez lui au départ']];
     let boutonSim = '';
+    boutonSim = '<button class="b" type="button" data-fiva="sim">⚔️ Simulateur</button>';
     const srcVa = { exacte: 'exacte', mesuree: 'mesurée sur un trajet', depart: 'mesurée depuis son départ', estimee: 'estimée d’après ses attaques', saisie: 'saisie à la main' };
     ui.rendreJoueurs = () => {
       const f = filtre.value.trim().toLowerCase();

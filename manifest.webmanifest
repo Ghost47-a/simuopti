@@ -1,7 +1,7 @@
 {
   "name": "SimuOpti",
   "short_name": "SimuOpti",
-  "description": "Analyse RC, armée conseillée pour l’XP, VA et TdP.",
+  "description": "Analyse RC, armée conseillée pour l’XP, simulateur, VA et TdP.",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",
