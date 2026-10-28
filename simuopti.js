@@ -616,7 +616,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.15.1'; // aligné sur @version
+  const VERSION = '1.16.0'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -649,6 +649,8 @@ window.SIMUOPTI_LITE = true;
   const fmtUp = (n) => (n == null || !isFinite(n) ? '—' : Math.ceil(n - 1e-6).toLocaleString('fr-FR'));
   const f2 = (n) => (n == null || !isFinite(n) ? '—' : n.toFixed(2).replace('.', ','));
   const LIEU = { dome: 'Dôme', loge: 'Loge', terrain: 'TDC' };
+  // thèmes : code, nom, couleur de la pastille (l'accent du thème)
+  const THEMES = [['or', 'brun et or', '#c08a45'], ['nuit', 'nuit bleue', '#5aa9e6'], ['parch', 'parchemin clair', '#8a4f14'], ['foret', 'fourmilière verte', '#9cc45a']];
   const ORDER = Object.keys(Core.UNITS);
   const L = (c) => Core.LAB[c] || c;
   function armyStr(a) { return a.map(([c, n]) => `${fmt(n)} ${L(c)}`).join(', '); }
@@ -726,9 +728,23 @@ window.SIMUOPTI_LITE = true;
 
   const css = `
   :host{all:initial}
-  /* ---- Palette brun et or ---- */
+  /* ---- Thèmes : brun et or (par défaut), nuit bleue, parchemin clair, fourmilière verte ----
+   * --or : titres · --bronze : accent (boutons, choix) · --sur : texte posé sur l'accent · --fort : chiffres mis en avant */
   #simuopti-ui,#simuopti-ui-btn{--fond:#18120d;--carte:#221a13;--carte2:#2b2118;--champ:#110d09;--ligne:#3b2e21;--ligne2:#5a4630;
-    --or:#f3d9a4;--bronze:#c08a45;--bronze2:#8a6a3b;--texte:#eee3d1;--mut:#a8997f;--ok:#8fd18f;--okf:#1f3a1d;--warn:#f0b35a;--warnf:#3a2a14;--ko:#ff8a6b;--kof:#3a1a14}
+    --or:#f3d9a4;--bronze:#c08a45;--bronze2:#8a6a3b;--texte:#eee3d1;--mut:#a8997f;--ok:#8fd18f;--okf:#1f3a1d;--warn:#f0b35a;--warnf:#3a2a14;--ko:#ff8a6b;--kof:#3a1a14;
+    --sur:#18120d;--fort:#ffffff}
+  #simuopti-ui.t-nuit,#simuopti-ui-btn.t-nuit{--fond:#0f1420;--carte:#161d2c;--carte2:#1d2638;--champ:#0a0e17;--ligne:#283349;--ligne2:#3a4866;
+    --or:#cfe3ff;--bronze:#5aa9e6;--bronze2:#3a6a96;--texte:#e3e9f3;--mut:#8e9bb3;--ok:#7fd4a0;--okf:#16302a;--warn:#f2b45c;--warnf:#33281a;--ko:#ff8a7a;--kof:#3a1c1e;
+    --sur:#0f1420;--fort:#ffffff}
+  #simuopti-ui.t-parch,#simuopti-ui-btn.t-parch{--fond:#f1e6c8;--carte:#faf3df;--carte2:#efe1bb;--champ:#fffaf0;--ligne:#d9c79a;--ligne2:#b89d63;
+    --or:#8a2a12;--bronze:#8a4f14;--bronze2:#b89d63;--texte:#2e2414;--mut:#65553a;--ok:#2e7d32;--okf:#dcefd5;--warn:#9a5200;--warnf:#f6e3c0;--ko:#b3261e;--kof:#f8dcd6;
+    --sur:#fffaf0;--fort:#1a1208}
+  #simuopti-ui.t-foret,#simuopti-ui-btn.t-foret{--fond:#10160f;--carte:#172016;--carte2:#1e2a1c;--champ:#0b100a;--ligne:#2c3a29;--ligne2:#45583f;
+    --or:#e2ecc4;--bronze:#9cc45a;--bronze2:#5f7f3a;--texte:#e6eadc;--mut:#98a58c;--ok:#a6e08a;--okf:#22351d;--warn:#f0c060;--warnf:#33301a;--ko:#ff8a6b;--kof:#3a1c14;
+    --sur:#10160f;--fort:#ffffff}
+  #simuopti-ui header .themes{display:flex;align-items:center;gap:6px;margin-left:auto;margin-right:6px}
+  #simuopti-ui header .themes button{width:24px;height:24px;padding:0;border-radius:50%;border:2px solid var(--ligne2);cursor:pointer}
+  #simuopti-ui header .themes button.on{border:3px solid var(--or)}
   #simuopti-ui-btn{position:fixed;left:12px;bottom:12px;z-index:2147483646;background:var(--carte2);color:var(--or);border:1px solid var(--bronze2);border-radius:20px;padding:7px 14px;font:600 13px system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 10px #0008}
   #simuopti-ui{position:fixed;left:12px;bottom:52px;z-index:2147483647;width:min(600px,calc(100vw - 24px));max-height:calc(100vh - 70px);display:none;flex-direction:column;background:var(--fond);color:var(--texte);border:1px solid var(--bronze2);border-radius:12px;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 8px 30px #000b}
   #simuopti-ui.open{display:flex}
@@ -749,11 +765,11 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui header .ctl button{width:28px;height:26px;border-radius:6px;font-size:15px;line-height:1}
   #simuopti-ui header .ctl button:hover{background:var(--carte2)}
   #simuopti-ui.app header .ctl,#simuopti-ui.app [data-page]{display:none}
-  #simuopti-ui nav{display:flex;gap:4px;padding:4px 10px 0;border-bottom:1px solid var(--ligne)}
-  #simuopti-ui nav button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;background:transparent;color:var(--mut);border:0;border-bottom:3px solid transparent;padding:8px 6px 7px;font:700 13px system-ui,sans-serif;cursor:pointer;white-space:nowrap}
+  #simuopti-ui nav{display:flex;gap:4px;margin:8px 10px 0;padding:4px;background:var(--champ);border-radius:10px}
+  #simuopti-ui nav button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;background:transparent;color:var(--mut);border:0;border-radius:8px;padding:9px 6px;font:700 13px system-ui,sans-serif;cursor:pointer;white-space:nowrap}
   #simuopti-ui nav button .ico{font-size:15px}
   #simuopti-ui nav button:hover{color:var(--texte)}
-  #simuopti-ui nav button.on{color:var(--or);border-bottom-color:var(--bronze)}
+  #simuopti-ui nav button.on{color:var(--sur);background:var(--bronze)}
   @media (max-width:520px){#simuopti-ui nav button{font-size:12px;padding:8px 2px 7px;gap:3px}#simuopti-ui .long{display:none}}
   @media (min-width:521px){#simuopti-ui .court{display:none}}
   /* ---- Barre « joueur actif » ---- */
@@ -764,7 +780,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .pill{display:inline-flex;align-items:baseline;gap:3px;padding:1px 7px;border-radius:10px;background:var(--champ);border:1px solid var(--ligne);font-size:12px;white-space:nowrap}
   #simuopti-ui .pill i{font-style:normal;color:var(--mut);font-size:10px;font-weight:700}
   #simuopti-ui .pill.inc{color:var(--mut)}
-  #simuopti-ui .pill.sup{border-color:#6b4e22;color:var(--warn)}
+  #simuopti-ui .pill.sup{border-color:var(--warn);color:var(--warn)}
   #simuopti-ui .sep{display:none}
   @media (max-width:520px){#simuopti-ui .fbar [data-fres]{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;gap:3px}#simuopti-ui .fbar .pill{padding:1px 6px}}
   /* ---- Corps ---- */
@@ -774,15 +790,15 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui label{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--mut)}
   #simuopti-ui input[type=number],#simuopti-ui input[type=text],#simuopti-ui input[type=password],#simuopti-ui select{width:64px;background:var(--champ);color:var(--texte);border:1px solid var(--ligne2);border-radius:6px;padding:4px 6px;font:13px system-ui,sans-serif;outline:none}
   #simuopti-ui input[type=text]{width:110px}
-  #simuopti-ui input:focus,#simuopti-ui select:focus,#simuopti-ui textarea:focus{border-color:var(--bronze);box-shadow:0 0 0 2px #c08a4533}
+  #simuopti-ui input:focus,#simuopti-ui select:focus,#simuopti-ui textarea:focus{border-color:var(--bronze);box-shadow:0 0 0 2px var(--bronze2)}
   #simuopti-ui textarea{width:100%;box-sizing:border-box;height:110px;background:var(--champ);color:var(--texte);border:1px solid var(--ligne2);border-radius:8px;padding:7px;font:12px ui-monospace,Consolas,monospace;outline:none}
-  #simuopti-ui .b{display:inline-flex;align-items:center;gap:5px;background:var(--bronze);color:#1a120a;border:0;border-radius:8px;padding:7px 14px;font:700 13px system-ui,sans-serif;cursor:pointer}
+  #simuopti-ui .b{display:inline-flex;align-items:center;gap:5px;background:var(--bronze);color:var(--sur);border:0;border-radius:8px;padding:7px 14px;font:700 13px system-ui,sans-serif;cursor:pointer}
   #simuopti-ui .b:hover{filter:brightness(1.08)}
   #simuopti-ui .b:disabled{opacity:.55;cursor:wait}
   #simuopti-ui .b.alt{background:var(--carte2);color:var(--texte);border:1px solid var(--ligne2)}
   #simuopti-ui .b.mini{padding:3px 9px;font-size:12px;border-radius:6px}
   /* ---- Cartes ---- */
-  #simuopti-ui .card{border:1px solid var(--ligne);border-radius:10px;padding:10px 12px;margin:10px 0;background:var(--carte)}
+  #simuopti-ui .card{border:1px solid var(--ligne);border-radius:12px;padding:12px 14px;margin:10px 0;background:var(--carte)}
   #simuopti-ui h4{margin:0 0 6px;color:var(--or);font-size:14px;font-weight:800}
   #simuopti-ui .card>h4:first-child{display:flex;align-items:center;gap:6px}
   #simuopti-ui .sous{margin:-2px 0 8px;color:var(--mut);font-size:12px}
@@ -790,7 +806,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui td,#simuopti-ui th{padding:4px 6px;border-bottom:1px solid var(--ligne);text-align:left;vertical-align:top}
   #simuopti-ui th{color:var(--mut);font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px}
   #simuopti-ui .ok{color:var(--ok)}#simuopti-ui .warn{color:var(--warn)}#simuopti-ui .mut{color:var(--mut)}
-  #simuopti-ui .big{font-weight:800;color:#fff}
+  #simuopti-ui .big{font-weight:800;color:var(--fort)}
   #simuopti-ui .warn.big{color:var(--warn)}#simuopti-ui .ok.big{color:var(--ok)}
   /* ---- Messages (encadrés) et aide repliable ---- */
   #simuopti-ui .deuxtours{margin:10px 0 4px;padding:8px 10px;border-radius:8px;border:1px solid var(--bronze2);background:var(--carte2)}
@@ -817,37 +833,65 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .va-res{font-size:28px;line-height:1.1;font-weight:900;color:var(--ok);margin:4px 0;letter-spacing:.3px}
   #simuopti-ui .hero .va-res{margin:0}
   #simuopti-ui .badge{display:inline-block;font-size:11px;font-weight:800;padding:2px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;background:var(--carte2);color:var(--mut);border:1px solid var(--ligne2)}
-  #simuopti-ui .badge.ok{background:var(--okf);color:var(--ok);border-color:#2f5a2c}
-  #simuopti-ui .badge.warn{background:var(--warnf);color:var(--warn);border-color:#6b4e22}
-  #simuopti-ui .badge.ko{background:var(--kof);color:var(--ko);border-color:#6b2e22}
+  #simuopti-ui .badge.ok{background:var(--okf);color:var(--ok);border-color:var(--ok)}
+  #simuopti-ui .badge.warn{background:var(--warnf);color:var(--warn);border-color:var(--warn)}
+  #simuopti-ui .badge.ko{background:var(--kof);color:var(--ko);border-color:var(--ko)}
   #simuopti-ui .pourquoi{color:var(--texte);font-size:13px;margin:2px 0 6px}
   /* ---- Sous-onglets (segments) ---- */
   #simuopti-ui .seg{display:flex;gap:4px;padding:4px;background:var(--carte);border:1px solid var(--ligne);border-radius:10px;margin:2px 0 10px}
   #simuopti-ui .seg button{flex:1;background:transparent;color:var(--mut);border:0;border-radius:7px;padding:7px 6px;font:700 12.5px system-ui,sans-serif;cursor:pointer}
-  #simuopti-ui .seg button.on{background:var(--bronze);color:#1a120a}
+  #simuopti-ui .seg button.on{background:var(--bronze);color:var(--sur)}
   #simuopti-ui .seg button:not(.on):hover{color:var(--texte);background:var(--carte2)}
   /* ---- Analyse RC ---- */
-  #simuopti-ui .reglages{border:1px solid var(--ligne);border-radius:10px;background:var(--carte);margin-bottom:10px}
-  #simuopti-ui .reglages>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;font-weight:800;color:var(--or)}
-  #simuopti-ui .reglages>summary::-webkit-details-marker{display:none}
-  #simuopti-ui .reglages>summary{white-space:nowrap}
-  #simuopti-ui .reglages>summary .res{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--mut);font-size:12px;text-align:right}
+  #simuopti-ui .actions .b{min-height:40px}
+  #simuopti-ui .b.grand{flex:1;justify-content:center;min-height:44px;font-size:14px}
+  #simuopti-ui .b.contour{background:transparent;color:var(--or);border:1px solid var(--bronze)}
+  #simuopti-ui .reglages{background:var(--carte2);border-color:var(--ligne2)}
+  #simuopti-ui .reglages .sous{margin:8px 0 4px}
+  #simuopti-ui .reglages .niveaux{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  #simuopti-ui .reglages .niveaux label{flex-direction:column;align-items:stretch;gap:3px;font-size:11px}
+  #simuopti-ui .reglages .niveaux input{width:100%!important;box-sizing:border-box;text-align:center;font-weight:700;color:var(--or);min-height:34px}
+  #simuopti-ui .reglages .pseudo{margin-top:8px}
+  #simuopti-ui .reglages .pseudo input{flex:1;max-width:220px}
+  #simuopti-ui .reglages .tampon{margin:10px 0 0}
+  #simuopti-ui .reglages .tampon details.aide{border:0;padding:0;margin:0 0 0 auto}
+  #simuopti-ui .reglages .tampon details.aide[open]{flex-basis:100%}
+  #simuopti-ui .reglages .armybox{background:var(--carte)}
+  #simuopti-ui .combat .tete,#simuopti-ui .prop .tete{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
+  #simuopti-ui .combat .tete h4,#simuopti-ui .prop .tete h4{margin:0}
+  #simuopti-ui .pastilles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:8px 0}
+  #simuopti-ui .pv{display:flex;flex-direction:column;align-items:center;gap:1px;background:var(--carte2);border-radius:8px;padding:7px 4px;text-align:center}
+  #simuopti-ui .pv.large{grid-column:span 2}
+  #simuopti-ui .pv span,#simuopti-ui .pv small{color:var(--mut);font-size:11px}
+  #simuopti-ui .pv small{font-size:10px}
+  #simuopti-ui .pv b{font-size:17px;font-weight:800}
+  #simuopti-ui .ligne-vie{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--ligne);margin-top:8px;padding-top:8px;color:var(--mut)}
+  #simuopti-ui .ligne-vie b{color:var(--fort)}
+  #simuopti-ui .prop{display:flex;flex-direction:column;gap:6px}
+  #simuopti-ui .prop.deux{border:2px solid var(--bronze)}
+  #simuopti-ui .prop .boutons{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  #simuopti-ui .gains{display:flex;gap:8px}
+  #simuopti-ui .gains>div{flex:1;display:flex;flex-direction:column;gap:1px;border-radius:8px;padding:7px 9px}
+  #simuopti-ui .gains .ok{background:var(--okf)}#simuopti-ui .gains .ko{background:var(--kof);color:var(--ko)}
+  #simuopti-ui .gains small{font-size:11px}#simuopti-ui .gains b{font-size:15px}
+  #simuopti-ui .synth>summary{cursor:pointer;color:var(--or);font-weight:800;font-size:14px;list-style:none}
+  #simuopti-ui .synth>summary::-webkit-details-marker{display:none}
+  #simuopti-ui .synth[open]>summary{margin-bottom:6px}
   #simuopti-ui label.case{display:block;line-height:1.5}
-  #simuopti-ui .reglages>summary .chev,#simuopti-ui .armybox .chev{transition:transform .15s;color:var(--mut)}
-  #simuopti-ui .reglages[open]>summary .chev,#simuopti-ui .armybox[open] .chev{transform:rotate(180deg)}
-  #simuopti-ui .reglages .in{padding:0 12px 10px}
+  #simuopti-ui .armybox .chev{transition:transform .15s;color:var(--mut)}
+  #simuopti-ui .armybox[open] .chev{transform:rotate(180deg)}
   #simuopti-ui .xpsel{display:flex;flex-wrap:wrap;gap:5px;align-items:center;font-size:12px}
   #simuopti-ui .xpsel>span{margin-right:4px;color:var(--mut)}
   #simuopti-ui .chip{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border:1px solid var(--ligne2);border-radius:12px;background:var(--champ);color:var(--texte);cursor:pointer;user-select:none}
-  #simuopti-ui .chip:has(input:checked){background:var(--bronze);color:#1a120a;border-color:var(--bronze);font-weight:800}
-  #simuopti-ui .chip input{margin:0;accent-color:#1a120a}
+  #simuopti-ui .chip:has(input:checked){background:var(--bronze);color:var(--sur);border-color:var(--bronze);font-weight:800}
+  #simuopti-ui .chip input{margin:0;accent-color:var(--sur)}
   #simuopti-ui .armybox{margin-top:8px;border:1px solid var(--ligne);border-radius:10px;background:var(--carte)}
   #simuopti-ui .armybox summary{list-style:none;display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;color:var(--or);font-weight:800}
   #simuopti-ui .armybox summary::-webkit-details-marker{display:none}
   #simuopti-ui .armybox summary:hover,#simuopti-ui .reglages>summary:hover{background:var(--carte2);border-radius:10px}
   #simuopti-ui .armybox .ico{font-size:16px}
-  #simuopti-ui .armybox .badge{margin-left:auto;text-transform:none;letter-spacing:0;background:var(--warnf);color:var(--warn);border-color:#6b4e22}
-  #simuopti-ui .armybox .badge.on{background:var(--okf);color:var(--ok);border-color:#2f5a2c}
+  #simuopti-ui .armybox .badge{margin-left:auto;text-transform:none;letter-spacing:0;background:var(--warnf);color:var(--warn);border-color:var(--warn)}
+  #simuopti-ui .armybox .badge.on{background:var(--okf);color:var(--ok);border-color:var(--ok)}
   #simuopti-ui .armybox textarea,#simuopti-ui .armybox [data-armyread]{margin:0 12px 10px;width:calc(100% - 24px)}
   #simuopti-ui .alertes{margin-top:8px;padding:7px 10px;border-left:3px solid var(--warn);background:var(--warnf);border-radius:8px;font-size:12.5px}
   #simuopti-ui .alertes div{margin:3px 0}
@@ -861,8 +905,8 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .fi-tab td{vertical-align:middle}
   #simuopti-ui .fi-tab .nomf{font-weight:800;color:var(--or);cursor:pointer}
   #simuopti-ui .fi-edit input,#simuopti-ui .fi-edit select{width:100%!important;box-sizing:border-box}
-  #simuopti-ui [data-simfiche]{font:13px system-ui,sans-serif;color:#3d2e14;margin:0 0 6px}
-  #simuopti-ui [data-simfiche]:not(:empty){background:#e8d9a8;border:1px solid #b39a5c;border-radius:6px;padding:4px 8px}
+  #simuopti-ui [data-simfiche]{font:13px system-ui,sans-serif;color:var(--texte);margin:0 0 8px}
+  #simuopti-ui [data-simfiche]:not(:empty){background:var(--carte2);border:1px solid var(--ligne2);border-radius:8px;padding:6px 10px}
   /* ---- VA & TdP ---- */
   #simuopti-ui .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 12px}
   #simuopti-ui .grid2 label{flex-direction:column;align-items:stretch;gap:3px}
@@ -870,7 +914,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .depart-card{border-color:var(--bronze2)}
   #simuopti-ui .depart-card .va-res{font-size:22px}
   #simuopti-ui .barre-va{display:inline-block;height:9px;background:var(--bronze);border-radius:3px;vertical-align:middle}
-  #simuopti-ui tr.choisie td{color:#fff;font-weight:800}
+  #simuopti-ui tr.choisie td{color:var(--fort);font-weight:800}
   `;
 
   function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; }
@@ -903,12 +947,13 @@ window.SIMUOPTI_LITE = true;
     const st = document.createElement('style'); st.textContent = css; racine.appendChild(st);
     const btn = el('<button id="simuopti-ui-btn" type="button">⚔️ SimuOpti</button>');
     panel = el(`<div id="simuopti-ui">
-      <header><span class="titre">⚔️ SimuOpti <small>v${VERSION}</small></span><span class="ctl">
+      <header><span class="titre">⚔️ SimuOpti <small>v${VERSION}</small></span>
+        <span class="themes" title="Thème">${THEMES.map(([k, nom, c]) => `<button type="button" data-theme="${k}" title="Thème ${nom}" aria-label="Thème ${nom}" style="background:${c}"></button>`).join('')}</span><span class="ctl">
         <button type="button" data-reset title="Remettre en place (position et taille d'origine)">⟲</button>
         <button type="button" data-max title="Agrandir en plein écran">⤢</button>
         <button type="button" data-x title="Fermer">×</button></span></header>
-      <nav>${onglets.map(([k, i, l, c]) => `<button type="button" data-tab="${k}"><span class="ico">${i}</span><span class="long">${l}</span><span class="court">${c}</span></button>`).join('')}</nav>
       <div class="fbar" title="Joueur actif : sa fiche remplit les autres onglets"><span class="lib">📇 Joueur actif</span><input type="text" data-fiche list="simuopti-fiches" placeholder="Choisir un joueur…" autocomplete="off"><datalist id="simuopti-fiches"></datalist><span class="mut" data-fres></span></div>
+      <nav>${onglets.map(([k, i, l, c]) => `<button type="button" data-tab="${k}"><span class="ico">${i}</span><span class="long">${l}</span><span class="court">${c}</span></button>`).join('')}</nav>
       <div class="body">
         <section class="vue" data-vue="rc">${vueRc()}</section>
         ${sectionSim}
@@ -920,6 +965,8 @@ window.SIMUOPTI_LITE = true;
     btn.onclick = basculer;
     panel.querySelector('[data-x]').onclick = fermer;
     panel.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => onglet(b.dataset.tab)));
+    panel.querySelectorAll('[data-theme]').forEach((b) => (b.onclick = () => { cfg.theme = b.dataset.theme; saveCfg(cfg); theme(btn); }));
+    theme(btn);
     if (APP) panel.classList.add('app', 'open'); else fenetre();
     initRc();
     initVa(); initFiches();
@@ -976,6 +1023,13 @@ window.SIMUOPTI_LITE = true;
     if (cfg.fenMax) setMax(true);
   }
 
+  /** Thème choisi (mémorisé dans les réglages) : une classe t-… sur le panneau et sur le bouton d'ouverture. */
+  function theme(btn) {
+    const t = THEMES.some(([k]) => k === cfg.theme) ? cfg.theme : 'or';
+    for (const x of [panel, btn]) { if (!x) continue; THEMES.forEach(([k]) => x.classList.remove('t-' + k)); if (t !== 'or') x.classList.add('t-' + t); }
+    panel.querySelectorAll('[data-theme]').forEach((b) => b.classList.toggle('on', b.dataset.theme === t));
+  }
+
   function onglet(id) {
     if (LITE && id === 'sim') id = 'rc';
     cfg.onglet = id; saveCfg(cfg);
@@ -987,33 +1041,49 @@ window.SIMUOPTI_LITE = true;
   /* ============================ Onglet Analyse RC ============================ */
   function vueRc() {
     return `
-      <details class="reglages" data-reglages><summary>⚙️ Mes niveaux <span class="res" data-regres></span><span class="chev">▼</span></summary><div class="in">
-        <div class="grid2">
-          <label>Pseudo <input type="text" data-k="pseudo"></label>
+      <div class="card">
+        <h4>📜 Rapport de combat</h4>
+        <textarea data-rc placeholder="Colle un ou plusieurs rapports de combat ici…"></textarea>
+        <div class="row actions">
+          <button class="b grand" type="button" data-go>🔍 Analyser</button>
+          <button class="b alt" type="button" data-coller-rc>📋 Coller</button>
+          <button class="b alt" type="button" data-page>📄 Analyser la page</button>
+          <button class="b alt" type="button" data-clear>✖ Vider</button>
+        </div>
+      </div>
+      <div data-reglages-place></div>
+      <div data-out></div>`;
+  }
+  /** Réglages de l'envoi : un seul bloc, placé dans le résultat entre la lecture du RC et les propositions. */
+  function vueReglages() {
+    return `<div class="card reglages" data-reglages>
+        <h4>⚙️ Réglages de l’envoi</h4>
+        <div class="sous">Mes niveaux</div>
+        <div class="niveaux">
           <label>Armes <input type="number" min="0" max="60" data-k="armes"></label>
           <label>Bouclier <input type="number" min="0" max="60" data-k="bouclier"></label>
           <label>Cochenille <input type="number" min="0" max="60" data-k="cochenille"></label>
-          <label title="JSN ajoutées au minimum pour encaisser la réplique si l’adversaire a pondu depuis le RC">🛡️ Marge tampon JSN (%) <input type="number" min="0" max="500" step="1" data-k="tampon"></label>
+          <label title="Vie à battre × ce coefficient, par prudence">Sécurité <input type="number" min="1" max="2" step="0.01" data-k="secu"></label>
         </div>
-        <div class="row"><div class="xpsel"><span>Unités à faire évoluer</span>${Object.keys(Core.EVOL).map((u) => `<label class="chip"><input type="checkbox" data-xp="${u}">${L(u)}</label>`).join('')}</div></div>
-      </div></details>
-      <h4>📜 Rapports de combat</h4>
-      <textarea data-rc placeholder="Colle un ou plusieurs rapports de combat ici…"></textarea>
-      <details data-armybox class="armybox"><summary><span class="ico">🐜</span><span>Mon armée <span class="mut">— pour calculer l’envoi optimal</span></span><span class="badge" data-armybadge>vide</span><span class="chev">▼</span></summary>
-        <textarea data-army style="height:80px;margin-top:4px" placeholder="Colle ton armée disponible : « Copier l'armée » d'un rapport, ou la liste de la page Armée (une unité par ligne)…"></textarea>
-        <div class="mut" data-armyread></div>
-      </details>
-      <div class="row">
-        <button class="b" type="button" data-go>🔍 Analyser</button>
-        <button class="b alt" type="button" data-page>📄 Analyser la page</button>
-        <button class="b alt" type="button" data-clear>✖ Effacer</button>
-      </div>
-      <div data-out></div>`;
+        <label class="pseudo">Mon pseudo <input type="text" data-k="pseudo" placeholder="pour reconnaître mes rapports"></label>
+        <div class="sous">Unités à faire évoluer</div>
+        <div class="xpsel">${Object.keys(Core.EVOL).map((u) => `<label class="chip"><input type="checkbox" data-xp="${u}">${L(u)}</label>`).join('')}</div>
+        <div class="tampon"><label title="JSN ajoutées au minimum pour encaisser la réplique si l’adversaire a pondu depuis le RC">🛡️ Marge tampon JSN <input type="number" min="0" max="500" step="5" data-k="tampon"> %</label>
+          <details class="aide"><summary>Pourquoi ?</summary><div>Les JSN partent en tête de ton armée : la réplique du défenseur tue les unités dans l’ordre de l’armée, donc ce sont elles qui meurent à la place des unités qui frappent et qui évoluent. Le minimum est calculé sur l’armée vue dans le RC. Mais entre le RC et l’arrivée de ton attaque, l’adversaire continue de pondre : sa réplique grandit, et sans marge ce sont tes autres unités qui meurent et n’évoluent pas. La marge ajoute ce pourcentage de JSN au minimum (20 % par défaut). Augmente-la si le RC est ancien ou si l’adversaire pond vite (voir sa TdP dans l’onglet VA &amp; TdP), baisse-la si le RC vient d’être pris. Elle ne touche pas la vie à battre : si sa ponte est forte, refais un RC récent avant d’attaquer.</div></details></div>
+        <details data-armybox class="armybox"><summary><span class="ico">🐜</span><span>Mon armée <span class="mut">— pour l’envoi depuis mes troupes</span></span><span class="badge" data-armybadge>vide</span><span class="chev">▼</span></summary>
+          <textarea data-army style="height:80px;margin-top:4px" placeholder="Colle ton armée disponible : « Copier l'armée » d'un rapport, ou la liste de la page Armée (une unité par ligne)…"></textarea>
+          <div class="mut" data-armyread></div>
+        </details>
+      </div>`;
   }
   function initRc() {
     const v = panel.querySelector('[data-vue="rc"]');
     const ta = v.querySelector('[data-rc]'), out = v.querySelector('[data-out]');
     ui.rcTa = ta; ui.rcOut = out;
+    // réglages : rangés sous le rapport tant qu'il n'y a pas de résultat, puis déplacés dans le résultat par render()
+    ui.reglagesHome = v.querySelector('[data-reglages-place]');
+    ui.reglages = el(vueReglages());
+    ui.reglagesHome.appendChild(ui.reglages);
     const taArmy = v.querySelector('[data-army]'), armyRead = v.querySelector('[data-armyread]');
     const rerender = () => { if (ta.value.trim()) render(ta.value, out); };
     const showArmy = () => {
@@ -1039,29 +1109,25 @@ window.SIMUOPTI_LITE = true;
       inp.value = cfg[inp.dataset.k] ?? '';
       inp.addEventListener('change', () => {
         const k = inp.dataset.k;
-        cfg[k] = inp.type === 'number' ? (parseFloat(inp.value) || 0) : inp.value.trim();
-        saveCfg(cfg); rerender(); majReglages();
+        cfg[k] = inp.type === 'number' ? Math.max(0, parseFloat(String(inp.value).replace(',', '.')) || 0) : inp.value.trim();
+        if (k === 'secu' && cfg.secu < 1) { cfg.secu = 1; inp.value = 1; }
+        saveCfg(cfg); rerender();
       });
     });
-    // résumé des réglages sur le bloc replié ; ouvert tant que rien n'est réglé
-    const majReglages = () => {
-      v.querySelector('[data-regres]').textContent = `${cfg.pseudo || 'pseudo ?'} · Armes ${cfg.armes || 0} · Bouclier ${cfg.bouclier || 0} · Cochenille ${cfg.cochenille || 0} · Tampon +${cfg.tampon ?? Core.TAMPON_DEFAUT} % · ${(cfg.xpUnits || []).map(L).join(' + ') || 'aucune unité'}`;
-    };
-    majReglages();
-    if (!cfg.armes && !cfg.pseudo) v.querySelector('[data-reglages]').open = true;
-    v.querySelectorAll('[data-xp]').forEach((cb) => cb.addEventListener('change', majReglages));
     const keepRc = () => { cfg.rapport = ta.value; saveCfg(cfg); };
     v.querySelector('[data-go]').onclick = () => { keepRc(); render(ta.value, out, { choisir: true }); };
-    v.querySelector('[data-clear]').onclick = () => { ta.value = ''; out.innerHTML = ''; keepRc(); };
+    v.querySelector('[data-clear]').onclick = () => { ta.value = ''; rangerReglages(); out.innerHTML = ''; keepRc(); };
     v.querySelector('[data-page]').onclick = () => { ta.value = document.body.innerText; keepRc(); render(ta.value, out, { choisir: true }); };
+    // coller le presse-papiers puis analyser ; si le navigateur refuse la lecture, on colle à la main
+    v.querySelector('[data-coller-rc]').onclick = async (e) => {
+      try {
+        const x = await navigator.clipboard.readText();
+        if (x && x.trim()) { ta.value = x; keepRc(); render(ta.value, out, { choisir: true }); return; }
+      } catch (err) { /* lecture refusée */ }
+      ta.focus(); e.target.textContent = 'Colle avec un appui long'; setTimeout(() => (e.target.textContent = '📋 Coller'), 2500);
+    };
     ta.addEventListener('input', keepRc);
-    // délégation : copie des niveaux, envoi vers le simulateur
-    out.addEventListener('change', (e) => {
-      if (!e.target.matches('[data-tampon]')) return;
-      cfg.tampon = Math.max(0, parseFloat(e.target.value) || 0); saveCfg(cfg);
-      v.querySelector('[data-k=tampon]').value = cfg.tampon;
-      majReglages(); rerender();
-    });
+    // délégation : copie des niveaux et des armées, envoi vers le simulateur
     out.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -1109,7 +1175,11 @@ window.SIMUOPTI_LITE = true;
     return autres;
   }
 
+  /** Remet les réglages sous le rapport avant de réécrire le résultat (ils seraient détruits avec lui). */
+  function rangerReglages() { if (ui.reglages && ui.reglagesHome) ui.reglagesHome.appendChild(ui.reglages); }
+
   function render(text, out, { choisir = false } = {}) {
+    rangerReglages();
     const res = Core.analyseText(text, cfg);
     if (!res.analyses.length) { out.innerHTML = '<p class="warn">Aucun combat reconnu dans ce texte.</p>'; return; }
     const me = cfg.pseudo || 'Moi';
@@ -1118,14 +1188,14 @@ window.SIMUOPTI_LITE = true;
     if (choisir && adversaires.length === 1) setTimeout(() => choisirFiche(adversaires[0].name), 0);
     else majFiches();
     let html = '';
-    ui.simPrep = [];
+    ui.simPrep = {};
 
-    // ---- Synthèse par joueur
+    // ---- Synthèse par joueur (tous les rapports) : niveaux, alertes, copie
     const alertes = [];
     const exact = (v) => `<span class="niv ok">${v}</span>`;
     const suppose = (v) => `<span class="niv warn">≈${v}</span>`;
     const vide = '<span class="mut">—</span>';
-    html += '<div class="card"><h4>📊 Niveaux par joueur</h4><table><tr><th>Joueur</th><th>Armes</th><th>Bouclier</th><th>Dôme</th><th>Loge</th><th>Vie</th></tr>';
+    let synth = '<table><tr><th>Joueur</th><th>Armes</th><th>Bouclier</th><th>Dôme</th><th>Loge</th><th>Vie</th></tr>';
     for (const p of res.players) {
       const nom = esc(p.name);
       let bouclier = p.bouclierLvl != null ? exact(p.bouclierLvl) : null;
@@ -1137,117 +1207,145 @@ window.SIMUOPTI_LITE = true;
         if (r.combos.length === 1) return exact(r.combos[0].niveau);
         if (r.cands) alertes.push(`${nom} (${LIEU[pl]}) : trop peu de tués, vie entre ×${f2(r.cands[0])} et ×${f2(r.cands[r.cands.length - 1])}. La valeur haute est retenue.`);
         if (!r.combos.length) { alertes.push(`${nom} (${LIEU[pl]}) : vie ×${f2(r.mult)} sans combinaison bouclier/niveau cohérente, rapport à vérifier.`); return '<span class="warn">?</span>'; }
-        const a = r.combos[0], b = r.combos[r.combos.length - 1];
         if (r.hyp) {
           if (bouclier == null) bouclier = suppose(r.hyp.bouclier);
-          alertes.push(`${nom} (${LIEU[pl]}) : bouclier et niveau supposés (plus haut bouclier ≤ armes). ${r.combos.length} combinaisons possibles, de bouclier ${a.bouclier} / niveau ${a.niveau} à bouclier ${b.bouclier} / niveau ${b.niveau}.`);
           return suppose(r.hyp.niveau);
         }
-        alertes.push(`${nom} (${LIEU[pl]}) : ${r.combos.length} combinaisons possibles, de bouclier ${a.bouclier} / niveau ${a.niveau} à bouclier ${b.bouclier} / niveau ${b.niveau}.`);
         return '<span class="warn">?</span>';
       };
       const dome = lieu('dome'), loge = lieu('loge');
       if (bouclier == null) bouclier = '<span class="mut">?</span>';
-      html += `<tr><td>${nom}</td><td>${p.armesLvl ?? '—'}</td><td>${bouclier}</td><td>${dome}</td><td>${loge}</td><td class="mut">${vies.join('<br>') || '—'}</td></tr>`;
+      synth += `<tr><td>${nom}</td><td>${p.armesLvl ?? '—'}</td><td>${bouclier}</td><td>${dome}</td><td>${loge}</td><td class="mut">${vies.join('<br>') || '—'}</td></tr>`;
     }
-    html += '</table>';
+    synth += '</table>';
     const meP = res.players.find((p) => p.name.toLowerCase() === me.toLowerCase());
     if (meP && meP.bouclierLvl == null && !cfg.bouclier) alertes.unshift(`Ton bouclier n’est pas lisible dans ces rapports : le calcul suppose bouclier ${res.my.bouclier} (= tes armes). Renseigne-le dans les réglages, il fixe le nombre de JSN tampon.`);
-    html += `<div class="mut" style="margin-top:6px"><span class="niv ok">vert</span> calculé · <span class="niv warn">≈ orange</span> supposé</div>`;
-    if (alertes.length) html += `<div class="alertes">${alertes.map((a) => `<div class="warn">⚠ ${a}</div>`).join('')}</div>`;
+    synth += `<div class="mut" style="margin-top:6px"><span class="niv ok">vert</span> calculé · <span class="niv warn">≈ orange</span> une des combinaisons possibles (même vie)</div>`;
     // copie au format « pseudo // A // B // D // L // VA // TdP »
     const autres = res.players.filter((p) => p.name.toLowerCase() !== me.toLowerCase());
     ui.copieTexte = (autres.length ? autres : res.players).map(ligneJoueur).join('\n');
-    html += `<div class="row" style="margin-top:8px"><button class="b mini" type="button" data-copy>📋 Copier les niveaux</button><span class="mut">« ? » = inconnu · « 18? » = supposé · VA et TdP viennent de l’onglet VA &amp; TdP</span></div>
+    synth += `<div class="row" style="margin-top:8px"><button class="b mini" type="button" data-copy>📋 Copier les niveaux</button><span class="mut">« ? » = inconnu · « 18? » = supposé · VA et TdP viennent de l’onglet VA &amp; TdP</span></div>
       <pre class="copie">${esc(ui.copieTexte)}</pre>`;
-    html += '</div>';
+    const plusieurs = res.analyses.length > 1;
+    const blocSynth = `<details class="card synth"${plusieurs ? ' open' : ''}><summary>📊 Niveaux par joueur <span class="mut">(${res.analyses.length} rapport${plusieurs ? 's' : ''})</span></summary>${synth}</details>`;
+    if (alertes.length) html += `<div class="alertes">${alertes.map((a) => `<div class="warn">⚠ ${a}</div>`).join('')}</div>`;
+    if (plusieurs) html += blocSynth;
 
-    // ---- Détail des combats
+    // ---- Un bloc par combat : lecture du RC, réglages (une seule fois), propositions
+    const LIEU_LONG = { dome: 'Dôme', loge: 'Loge Impériale', terrain: 'Terrain de chasse' };
+    let reglagesPlaces = false;
     res.analyses.forEach((r, i) => {
       const h = r.combat.header || {};
       const an = h.att || me, dn = h.def || me;
       const place = h.place;
-      html += `<div class="card"><h4>⚔️ #${i + 1} ${esc(an)} → ${esc(dn)} ${place ? '· ' + LIEU[place] : ''} ${h.colonie ? '(colonie)' : ''}</h4>`;
-      html += `<div class="mut">Attaque : ${armyStr(r.combat.attackers)}<br>Défense : ${armyStr(r.combat.defenders)}</div>`;
-      html += '<table><tr><th>Tour</th><th>Vie défenseur</th><th>Vie attaquant</th></tr>';
-      for (const rd of r.rounds) {
-        const v = (m, all) => (m == null ? '—' : all ? `<span class="mut">≤ ×${f2(m)} (tous tués)</span>` : `×${f2(m)}`);
-        const vd = rd.candsDef && rd.candsDef.length > 1 ? `<span class="warn">×${f2(rd.candsDef[0])} à ×${f2(rd.candsDef[rd.candsDef.length - 1])}</span>` : v(rd.multDef, rd.allDef);
-        html += `<tr><td>${rd.n}</td><td>${vd}</td><td>${v(rd.multAtt, rd.allAtt)}</td></tr>`;
-      }
-      html += '</table>';
-      html += `<div>Armes : ${esc(an)} <b>${r.attArmes ?? '—'}</b> · ${esc(dn)} <b>${r.defArmes ?? '—'}</b>`;
-      if (r.attMult) html += ` · Bouclier ${esc(an)} <b>${Math.round((r.attMult - 1) * 10)}</b>`;
-      html += '</div>';
-      if (r.oneShot) html += `<div class="${r.facteurReplique === 0.1 ? 'ok' : 'warn'}">One-shot : réplique ×${r.facteurReplique ?? '?'}.</div>`;
-      if (r.xpMult) {
-        if (r.xpMult.full) html += '<div class="mut">XP à 100 % : la vie exacte n’est pas lisible, seulement un plafond.</div>';
-        else html += `<div class="ok">XP ${f2(r.xpMult.pct)} % → vie réelle du défenseur ×${f2(r.xpMult.mult)} (cochenille ${cfg.cochenille}).</div>`;
+      const pd = res.players.find((p) => p.name.toLowerCase() === String(dn).toLowerCase());
+      const eMult = r.defMult || (r.xpMult && !r.xpMult.full ? r.xpMult.mult : null) || r.defPlafond;
+      const exactV = !!(r.defMult || (r.xpMult && !r.xpMult.full));
+      const nbT = r.rounds.length;
+      html += `<div class="card combat"><div class="tete"><h4>⚔️ ${esc(dn)}${place ? ' · ' + LIEU_LONG[place] : ''}${h.colonie ? ' (colonie)' : ''}</h4>
+        <span class="mut">${memeNom(an, me) || an === 'Moi' ? '' : esc(an) + ' · '}${nbT} tour${nbT > 1 ? 's' : ''}${r.oneShot ? ' · one-shot' : ''}</span></div>`;
+      html += `<div class="mut">Défense : ${armyStr(r.combat.defenders)}</div>`;
+
+      // niveaux du défenseur lus dans ce rapport
+      const rp = pd && place ? pd.res[place] : null;
+      const combos = rp ? rp.combos : [];
+      const ex = combos.length === 1 ? combos[0] : rp && rp.hyp ? rp.hyp : combos[0];
+      const libVie = place === 'loge' ? 'Bouclier + Loge' : place === 'dome' ? 'Bouclier + Dôme' : 'Bouclier';
+      const sousVie = !eMult ? 'pas lisible' : !exactV ? 'plafond' : place === 'terrain' ? (ex ? `bouclier ${ex.bouclier}` : '') : ex ? `${combos.length > 1 ? 'ex. ' : ''}${ex.bouclier} + ${ex.niveau}` : '';
+      const autreLieu = place === 'dome' ? 'loge' : 'dome';
+      const fiche = ficheDe(dn) || {};
+      const autreV = fiche[autreLieu] != null ? nivTxt(fiche, autreLieu) : '?';
+      html += `<div class="pastilles">
+        <div class="pv"><span>Armes</span><b class="${r.defArmes != null ? 'ok' : 'mut'}">${r.defArmes ?? '?'}</b><small>${r.defArmes != null ? 'lu' : 'pas lu'}</small></div>
+        <div class="pv large"><span>${libVie}</span><b class="${exactV ? 'ok' : 'warn'}">${eMult ? `vie ${exactV ? '' : '≤ '}×${f2(eMult)}` : '?'}</b><small>${sousVie}</small></div>
+        <div class="pv"><span>${autreLieu === 'dome' ? 'Dôme' : 'Loge'}</span><b class="${autreV === '?' ? 'mut' : 'ok'}">${esc(autreV)}</b><small>${autreV === '?' ? 'pas vu' : 'fiche'}</small></div>
+      </div>`;
+      if (eMult) {
+        let src = exactV ? (r.defMult ? `Vie ×${f2(eMult)} lue sur les tués du rapport.` : `Vie ×${f2(eMult)} calculée d’après l’XP (${f2(r.xpMult.pct)} %).`) : `Tous ses défenseurs sont morts sans XP partielle : seul un plafond de vie (×${f2(eMult)}) est lisible.`;
+        if (exactV && combos.length > 1) src += ` ${combos.slice(0, 3).map((c, k) => (k ? `${c.bouclier} + ${c.niveau}` : `Bouclier ${c.bouclier} + ${place === 'dome' ? 'Dôme' : 'Loge'} ${c.niveau}`)).join(', ')}${combos.length > 3 ? '…' : ''} : même vie, donc même résultat.`;
+        html += `<div class="mut">${src}</div>`;
       }
       r.warn.forEach((w) => (html += `<div class="warn">⚠ ${esc(w)}</div>`));
 
-      // ---- Plan one-shot contre le défenseur de ce rapport
-      const eMult = r.defMult || (r.xpMult && !r.xpMult.full ? r.xpMult.mult : null) || r.defPlafond;
+      // lecture détaillée du rapport, repliée
+      let lect = `<div class="mut">Attaque : ${armyStr(r.combat.attackers)}</div><table><tr><th>Tour</th><th>Vie défenseur</th><th>Vie attaquant</th></tr>`;
+      for (const rd of r.rounds) {
+        const v = (m, all) => (m == null ? '—' : all ? `<span class="mut">≤ ×${f2(m)} (tous tués)</span>` : `×${f2(m)}`);
+        const vd = rd.candsDef && rd.candsDef.length > 1 ? `<span class="warn">×${f2(rd.candsDef[0])} à ×${f2(rd.candsDef[rd.candsDef.length - 1])}</span>` : v(rd.multDef, rd.allDef);
+        lect += `<tr><td>${rd.n}</td><td>${vd}</td><td>${v(rd.multAtt, rd.allAtt)}</td></tr>`;
+      }
+      lect += '</table>';
+      lect += `<div>Armes : ${esc(an)} <b>${r.attArmes ?? '—'}</b> · ${esc(dn)} <b>${r.defArmes ?? '—'}</b>`;
+      if (r.attMult) lect += ` · Bouclier ${esc(an)} <b>${Math.round((r.attMult - 1) * 10)}</b>`;
+      lect += '</div>';
+      if (r.oneShot) lect += `<div class="${r.facteurReplique === 0.1 ? 'ok' : 'warn'}">One-shot : réplique ×${r.facteurReplique ?? '?'}.</div>`;
+      if (r.xpMult) {
+        if (r.xpMult.full) lect += '<div class="mut">XP à 100 % : la vie exacte n’est pas lisible, seulement un plafond.</div>';
+        else lect += `<div class="ok">XP ${f2(r.xpMult.pct)} % → vie réelle du défenseur ×${f2(r.xpMult.mult)} (cochenille ${cfg.cochenille}).</div>`;
+      }
+
       if (eMult && r.defArmes != null) {
-        const exactV = !!(r.defMult || (r.xpMult && !r.xpMult.full));
         const cibles = (cfg.xpUnits && cfg.xpUnits.length) ? cfg.xpUnits : ['T'];
         const frappeurs = cibles.filter((u) => u !== 'JSN' && Core.UNITS[u].att > 1);
         const illimite = [['JSN', 1e15], ...(frappeurs.length ? frappeurs : ['T']).map((u) => [u, 1e15])];
-        const bloc = (o, avecStock) => {
-          let hh = '';
-          const deuxT = o.tours === 2, enT = deuxT ? 'en deux tours' : 'en un tour';
-          if (!o.passe) return `<div class="warn">Impossible de le passer ${enT} avec ton armée${o.manqueAtt ? ` : il manque ${fmt(o.manqueAtt * (1 + res.my.armes / 10))} de force de frappe (≈ ${fmt(o.manqueAtt / Core.UNITS.T.att)} Tk)` : ''}.</div>`;
+        const opt = (avail, tours) => Core.optimize({ enemy: r.combat.defenders, eArmes: r.defArmes, eMult, my: res.my, avail, cibles, tours });
+        const o0 = opt(illimite, 1);
+        html += `<div class="ligne-vie"><span>Vie à battre (×${f2(eMult)}${exactV ? '' : ', plafond'} × sécurité ${f2(res.my.secu || 1.02)})</span><b>${fmt(o0.vieABattre)}</b></div>`;
+        html += `<details class="det"><summary>Lecture du RC (tours, armes, bouclier)</summary>${lect}</details>`;
+        html += '</div>';
+        if (!reglagesPlaces) { html += '<div data-reglages-slot></div>'; reglagesPlaces = true; }
+
+        let simBase = null;
+
+        const evolTot = (o) => o.rows.reduce((x, y) => x + y.evol, 0);
+        const jsnPertes = (o) => (o.rows.find((x) => x.c === 'JSN') || { pertes: 0 }).pertes;
+        // une proposition : tableau, tampon, frappe, alertes, bouton de copie (et envoi au simulateur)
+        const carte = (o, titre, { deux = false, avecStock = false, ref = null, cle = '' } = {}) => {
+          const enT = deux ? 'en deux tours' : 'en un tour';
+          if (!o.passe) return `<div class="card prop"><h4>${titre}</h4><div class="warn">Impossible de le passer ${enT} avec ton armée${o.manqueAtt ? ` : il manque ${fmt(o.manqueAtt * (1 + res.my.armes / 10))} de force de frappe (≈ ${fmt(o.manqueAtt / Core.UNITS.T.att)} Tk)` : ''}.</div></div>`;
+          let hh = `<div class="card prop${deux ? ' deux' : ''}"><div class="tete"><h4>${titre}</h4><span class="badge ${o.pct >= 99.9 ? 'ok' : 'warn'}">XP ${f2(o.pct)} %</span></div>`;
+          if (deux) hh += '<div class="mut">Sans one-shot, la réplique n’est pas divisée par 10 et plus de JSN meurent, mais deux fois moins de frappe suffit : l’armée est plus légère, donc l’XP plus haute. Surtout rentable contre une défense faible (Tanks, Artilleuses).</div>';
           hh += `<table><tr><th>Unité</th>${avecStock ? '<th>Dispo</th>' : ''}<th>À envoyer</th><th>Pertes</th><th>Évoluent</th></tr>`;
           for (const x of o.rows) hh += `<tr><td>${L(x.c)}</td>${avecStock ? `<td class="mut">${fmt(x.dispo)}</td>` : ''}<td class="big">${fmt(x.envoi)}</td><td>${x.pertes ? fmt(x.pertes) : '—'}</td><td>${x.evol ? `${fmt(x.evol)} → ${L(x.vers)}` : '—'}</td></tr>`;
-          const marge = ((deuxT ? o.frappe2 : o.frappe) / o.vieAdverse - 1) * 100;
-          hh += `</table><table style="margin-top:4px">
-            <tr><td>${deuxT ? 'Force de frappe sur les deux tours' : 'Force de frappe envoyée'}</td><td class="big ok">${fmt(deuxT ? o.frappe2 : o.frappe)}</td></tr>
-            <tr><td>Vie adverse</td><td>${fmt(o.vieAdverse)} <span class="${marge >= 0 ? 'ok' : 'warn'}">(${marge >= 0 ? '✓ dépassée de +' : '✗ '}${f2(marge)} %)</span></td></tr>
-            <tr><td>XP prévue</td><td class="${o.pct >= 99.9 ? 'ok' : 'warn'}">${f2(o.pct)} %</td></tr></table>`;
+          hh += '</table>';
+          const frappe = deux ? o.frappe2 : o.frappe, marge = (frappe / o.vieAdverse - 1) * 100;
+          hh += `<div class="mut">🛡️ JSN tampon : ${fmt(o.jsnNeed)} minimum${deux ? ' pour les deux répliques' : ''} + <b>${fmt(o.jsnMarge - o.jsnNeed)}</b> de marge (${cfg.tampon ?? Core.TAMPON_DEFAUT} %) = ${fmt(o.jsnMarge)}</div>`;
+          hh += `<div class="mut">Force de frappe${deux ? ' sur les deux tours' : ''} ${fmt(frappe)} · vie adverse ${fmt(o.vieAdverse)} <span class="${marge >= 0 ? 'ok' : 'warn'}">(${marge >= 0 ? '✓ +' : '✗ '}${f2(marge)} %)</span></div>`;
           if (o.jsnManque) hh += `<div class="warn">Il te manque ${fmt(o.jsnManque)} JSN pour encaisser la réplique : d’autres unités vont mourir.</div>`;
           if (o.pertesHorsJSN) hh += `<div class="warn">${fmt(o.pertesHorsJSN)} unités autres que des JSN meurent.</div>`;
           if (o.pct < 99.9) hh += `<div class="mut">XP partielle : ce mélange est déjà le plus léger qui passe ${enT} avec ces unités.</div>`;
-          if (deuxT && o.toursEstimes === 1) hh += '<div class="mut">Avec ce mélange il passe finalement en un tour.</div>';
-          return hh;
+          if (deux && o.toursEstimes === 1) hh += '<div class="mut">Avec ce mélange il passe finalement en un tour.</div>';
+          if (deux && ref) hh += `<div class="gains"><div class="ok"><small>Évolutions en plus</small><b>+${fmt(evolTot(o) - evolTot(ref))}</b></div><div class="ko"><small>JSN perdues en plus</small><b>+${fmt(o.jsnPerdues - jsnPertes(ref))}</b></div></div>`;
+          hh += `<div class="boutons"><button class="b grand${deux ? '' : ' contour'}" type="button" data-copiearmee="${esc(texteArmee(o.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée ${deux ? 'en 2 tours' : 'en 1 tour'}${avecStock ? ' (mes troupes)' : ''}</button>`;
+          return hh + '</div></div>';
         };
         // deux tours : seulement si le one-shot n'atteint pas 100 % d'XP et que plus d'unités évoluent
-        let a2 = false;
-        const evolTot = (o) => o.rows.reduce((x, r) => x + r.evol, 0);
-        const blocDeux = (o1, avail, avecStock) => {
-          if (!o1.passe || o1.pct >= 99.9) return '';
-          const o2 = Core.optimize({ enemy: r.combat.defenders, eArmes: r.defArmes, eMult, my: res.my, avail, cibles, tours: 2 });
-          if (!o2.passe || evolTot(o2) <= evolTot(o1)) return '';
-          a2 = true;
-          return `<div class="deuxtours"><h4>⚔️⚔️ En deux tours : plus d’XP${avecStock ? ' (depuis ton armée)' : ''}</h4>
-            <div class="mut">Sans one-shot, la réplique n’est pas divisée par 10 et plus de JSN meurent, mais deux fois moins de frappe suffit : l’armée est plus légère, donc l’XP plus haute. Surtout rentable contre une défense faible (Tanks, Artilleuses).</div>`
-            + bloc(o2, avecStock)
-            + `<div class="ok"><b>+${fmt(evolTot(o2) - evolTot(o1))}</b> unités évoluent en plus · <b>+${fmt(o2.jsnPerdues - (o1.rows.find((x) => x.c === 'JSN') || { pertes: 0 }).pertes)}</b> JSN perdues en plus (tampon de ${fmt(o2.jsnMarge)} JSN pour les deux répliques)</div>
-            <div class="row"><button class="b mini alt" type="button" data-copiearmee="${esc(texteArmee(o2.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée en deux tours</button></div></div>`;
+        const deuxTours = (o1, avail) => {
+          if (!o1.passe || o1.pct >= 99.9) return null;
+          const o2 = opt(avail, 2);
+          return o2.passe && evolTot(o2) > evolTot(o1) ? o2 : null;
         };
-        const o0 = Core.optimize({ enemy: r.combat.defenders, eArmes: r.defArmes, eMult, my: res.my, avail: illimite, cibles });
-        html += `<h4 style="margin-top:10px">🎯 Pour le passer en un tour (avec tes niveaux)</h4>
-          <table>
-          <tr><td>Vie à battre (×${f2(eMult)}${exactV ? '' : ', plafond'} × sécurité ${f2(cfg.secu)})</td><td class="big">${fmt(o0.vieABattre)}</td></tr>
-          <tr class="tampon-l"><td>🛡️ JSN tampon : minimum → avec la marge (bouclier ${res.my.bouclier}, ${res.my.source.bouclier})</td><td class="big">${fmt(o0.jsnNeed)} → ${fmt(o0.jsnMarge)}</td></tr>
-          </table>
-          <div class="tampon">🛡️ <b>Marge tampon</b> <input type="number" min="0" max="500" step="5" data-tampon value="${cfg.tampon ?? Core.TAMPON_DEFAUT}"> % <span>= <b>+${fmt(o0.jsnMarge - o0.jsnNeed)} JSN</b> au-delà du minimum, si l’adversaire a pondu depuis ce RC</span></div>
-          <div class="mut" style="margin-top:6px">Armée conseillée (${cibles.map(L).join(' + ')}) :</div>` + bloc(o0, false) + blocDeux(o0, illimite, false);
-        let choisi = o0;
+        html += carte(o0, `🎯 Armée conseillée · 1 tour <span class="mut">(${cibles.map(L).join(' + ')})</span>`, { cle: i + '-1' });
+        const o2 = deuxTours(o0, illimite);
+        if (o2) html += carte(o2, '⚔️⚔️ En 2 tours · plus d’XP', { deux: true, ref: o0, cle: i + '-2' });
         const mine = Core.parseArmyLoose(cfg.armee);
         if (mine.length) {
-          const o = Core.optimize({ enemy: r.combat.defenders, eArmes: r.defArmes, eMult, my: res.my, avail: mine, cibles });
-          html += `<h4 style="margin-top:8px">Envoi optimal depuis ton armée</h4>` + bloc(o, true) + blocDeux(o, mine, true);
-          if (o.passe) choisi = o;
+          const m1 = opt(mine, 1);
+          html += carte(m1, '🐜 Depuis mes troupes · 1 tour', { avecStock: true, cle: i + '-m1' });
+          const m2 = deuxTours(m1, mine);
+          if (m2) html += carte(m2, '🐜 Depuis mes troupes · 2 tours', { deux: true, avecStock: true, ref: m1, cle: i + '-m2' });
         }
         if (!exactV) html += '<div class="warn">Vie estimée par plafond : la vraie vie est plus basse, l’armée conseillée est prudente.</div>';
-        html += `<details class="aide"><summary>Pourquoi une marge tampon de JSN ?</summary><div>Les JSN partent en tête de ton armée : la réplique du défenseur tue les unités dans l’ordre de l’armée, donc ce sont elles qui meurent à la place des unités qui frappent et qui évoluent. Le minimum est calculé sur l’armée vue dans ce RC. Mais entre ce RC et l’arrivée de ton attaque, l’adversaire continue de pondre : sa réplique grandit, et sans marge ce sont tes autres unités qui meurent et n’évoluent pas. La marge ajoute ce pourcentage de JSN au minimum : <b>${cfg.tampon ?? Core.TAMPON_DEFAUT} %</b> ici (20 % par défaut). Augmente-la si le RC est ancien ou si l’adversaire pond vite (voir sa TdP dans l’onglet VA &amp; TdP), baisse-la si le RC vient d’être pris. Elle ne touche pas la vie à battre : si sa ponte est forte, refais un RC récent avant d’attaquer.</div></details>`;
         html += '<div class="estimation">⚠️ Attention : ceci n’est qu’une estimation et nécessite tout de même une vérification par simulation.</div>';
-        html += '<div class="row">';
-        html += `${choisi.passe ? `<button class="b mini alt" type="button" data-copiearmee="${esc(texteArmee(choisi.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée conseillée${a2 ? ' (un tour)' : ''}</button>` : ''}</div>`;
+      } else {
+        html += `<details class="det"><summary>Lecture du RC (tours, armes, bouclier)</summary>${lect}</details>`;
+        html += '</div>';
       }
-      html += '</div>';
     });
+    if (!plusieurs) html += blocSynth;
     out.innerHTML = html;
+    const slot = out.querySelector('[data-reglages-slot]');
+    if (slot && ui.reglages) slot.replaceWith(ui.reglages);
   }
 
   const nombreAff = (n) => Math.max(0, Math.floor(n || 0)).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
@@ -1398,7 +1496,7 @@ window.SIMUOPTI_LITE = true;
       const douteux = !d.stock && (d.autres.length > 0 || d.ecoule > 24 * 3600);
       let h;
       if (douteux) {
-        h = `<div class="va-res" style="color:#f0b35a">Départ non datable avec ce RC</div>
+        h = `<div class="va-res" style="color:var(--warn)">Départ non datable avec ce RC</div>
           <div>Il faudrait ${Core.dureeTexte(d.ecoule)} de ponte non-stop pour obtenir ses ${fmt(d.n)} ${L(d.unite)} : il en avait donc <b>déjà chez lui</b> quand il est parti.</div>
           ${d.autres.length ? `<div>D’ailleurs il reste ${d.autres.map(([c, n]) => `${fmt(n)} ${L(c)}`).join(', ')} chez lui : il n’est pas parti avec toute son armée.</div>` : ''}
           <div class="mut">Borne seulement : parti après le ${dateTexte(d.depart)}. ${detail}.</div>
@@ -1443,7 +1541,7 @@ window.SIMUOPTI_LITE = true;
       let h = `<div class="mut">Écart entre les deux RC : ${Core.dureeTexte(r.t)}${r.nom ? ` · joueur ${esc(r.nom)}` : ''}</div>`;
       if (!r.memeJoueur) h += '<div class="warn">⚠ Les deux RC ne visent pas le même joueur.</div>';
       h += `<table><tr><th>Unité</th><th>RC 1</th><th>Tués RC 1</th><th>RC 2</th><th>Pondues</th><th>TdP</th></tr>
-        ${r.lignes.map((l) => `<tr${r.best && l.c === r.best.c ? ' style="background:#2f4a2a"' : ''}><td>${L(l.c)}</td><td>${fmt(l.p1)}</td><td>${fmt(l.k)}</td><td>${fmt(l.p2)}</td><td>${l.u > 0 ? '+' + fmt(l.u) : fmt(l.u)}</td><td>${l.tdp != null ? f2(l.tdp) : '—'}</td></tr>`).join('')}</table>`;
+        ${r.lignes.map((l) => `<tr${r.best && l.c === r.best.c ? ' style="background:var(--okf)"' : ''}><td>${L(l.c)}</td><td>${fmt(l.p1)}</td><td>${fmt(l.k)}</td><td>${fmt(l.p2)}</td><td>${l.u > 0 ? '+' + fmt(l.u) : fmt(l.u)}</td><td>${l.tdp != null ? f2(l.tdp) : '—'}</td></tr>`).join('')}</table>`;
       if (r.best) {
         const niv = Math.round(r.best.tdp);
         h += `<div class="va-res">TdP ${niv}</div><div>D’après les ${fmt(r.best.u)} ${L(r.best.c)} pondues en ${Core.dureeTexte(r.t)} (calcul exact ${f2(r.best.tdp)}).</div>`;
