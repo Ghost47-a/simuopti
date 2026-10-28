@@ -718,7 +718,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.17.1'; // aligné sur @version
+  const VERSION = '1.17.3'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -854,6 +854,22 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui header .themes{display:flex;align-items:center;gap:6px;margin-left:auto;margin-right:6px}
   #simuopti-ui header .themes button{width:24px;height:24px;padding:0;border-radius:50%;border:2px solid var(--ligne2);cursor:pointer}
   #simuopti-ui header .themes button.on{border:3px solid var(--or)}
+  #simuopti-ui header .themes .aide-btn{width:28px;height:28px;margin-left:4px;border:2px solid var(--bronze);background:var(--bronze);color:var(--sur);font:900 15px system-ui,sans-serif;line-height:1}
+  #simuopti-ui .tuto-fond{position:absolute;inset:0;z-index:5;background:#000a;overflow:auto;padding:10px;box-sizing:border-box}
+  #simuopti-ui .tuto-fond[hidden]{display:none}
+  #simuopti-ui .tuto{max-width:560px;margin:0 auto;background:var(--carte);border:2px solid var(--bronze);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 10px 30px #0008}
+  #simuopti-ui .tuto-tete{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  #simuopti-ui .tuto-tete b{font-size:17px;color:var(--or)}
+  #simuopti-ui .tuto-x{width:36px;height:36px;border-radius:8px;border:1px solid var(--ligne2);background:transparent;color:var(--mut);font-size:20px;cursor:pointer}
+  #simuopti-ui .tuto-sonde{background:var(--warnf);border:2px solid var(--warn);border-radius:12px;padding:12px 14px}
+  #simuopti-ui .tuto-sonde h3{margin:0 0 6px;font-size:15px;color:var(--warn)}
+  #simuopti-ui .tuto-sonde p{margin:0 0 6px;line-height:1.45}
+  #simuopti-ui .tuto-sonde ol{margin:4px 0 0;padding-left:20px;line-height:1.5}
+  #simuopti-ui .tuto-etape{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start}
+  #simuopti-ui .tuto-etape .num{width:28px;height:28px;border-radius:50%;background:var(--carte2);border:1px solid var(--ligne2);color:var(--or);font-weight:800;display:flex;align-items:center;justify-content:center}
+  #simuopti-ui .tuto-etape b{color:var(--or)}
+  #simuopti-ui .tuto-etape p{margin:2px 0 0;line-height:1.45}
+  #simuopti-ui .tuto-fin{border-top:1px solid var(--ligne);padding-top:10px}
   #simuopti-ui-btn{position:fixed;left:12px;bottom:12px;z-index:2147483646;background:var(--carte2);color:var(--or);border:1px solid var(--bronze2);border-radius:20px;padding:7px 14px;font:600 13px system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 10px #0008}
   #simuopti-ui{position:fixed;left:12px;bottom:52px;z-index:2147483647;width:min(600px,calc(100vw - 24px));max-height:calc(100vh - 70px);display:none;flex-direction:column;background:var(--fond);color:var(--texte);border:1px solid var(--bronze2);border-radius:12px;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 8px 30px #000b}
   #simuopti-ui.open{display:flex}
@@ -972,6 +988,8 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .explic details.aide{border:0;padding:0;margin:2px 0 0}
   #simuopti-ui .reglages .ponte{display:flex;align-items:center;gap:6px;margin:10px 0 0;font-size:13px;color:var(--texte)}
   #simuopti-ui .reglages .ponte input{width:auto!important}
+  #simuopti-ui .niv-copie{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
+  #simuopti-ui .niv-copie pre.copie{flex:1;min-width:0;margin:0;overflow-x:auto;white-space:pre}
   #simuopti-ui .ponte-note{margin:6px 0;padding:7px 10px;border-radius:8px;background:var(--carte2);border:1px solid var(--ligne2);font-size:12.5px}
   #simuopti-ui .combat .tete,#simuopti-ui .prop .tete{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
   #simuopti-ui .combat .tete h4,#simuopti-ui .prop .tete h4{margin:0}
@@ -1097,7 +1115,7 @@ window.SIMUOPTI_LITE = true;
     const btn = el('<button id="simuopti-ui-btn" type="button">⚔️ SimuOpti</button>');
     panel = el(`<div id="simuopti-ui">
       <header><span class="titre">⚔️ SimuOpti <small>v${VERSION}</small></span>
-        <span class="themes" title="Thème">${THEMES.map(([k, nom, c]) => `<button type="button" data-theme="${k}" title="Thème ${nom}" aria-label="Thème ${nom}" style="background:${c}"></button>`).join('')}</span><span class="ctl">
+        <span class="themes" title="Thème">${THEMES.map(([k, nom, c]) => `<button type="button" data-theme="${k}" title="Thème ${nom}" aria-label="Thème ${nom}" style="background:${c}"></button>`).join('')}<button type="button" class="aide-btn" data-tuto title="Tuto : comment utiliser SimuOpti" aria-label="Tuto : comment utiliser SimuOpti">?</button></span><span class="ctl">
         <button type="button" data-reset title="Remettre en place (position et taille d'origine)">⟲</button>
         <button type="button" data-max title="Agrandir en plein écran">⤢</button>
         <button type="button" data-x title="Fermer">×</button></span></header>
@@ -1108,7 +1126,7 @@ window.SIMUOPTI_LITE = true;
         ${sectionSim}
         <section class="vue" data-vue="va">${vueVa()}</section>
         <section class="vue" data-vue="fiches">${vueFiches()}</section>
-      </div></div>`);
+      </div>${vueTuto()}</div>`);
     if (cfg.bouton) racine.append(btn);
     racine.append(panel);
     btn.onclick = basculer;
@@ -1116,12 +1134,43 @@ window.SIMUOPTI_LITE = true;
     panel.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => onglet(b.dataset.tab)));
     panel.querySelectorAll('[data-theme]').forEach((b) => (b.onclick = () => { cfg.theme = b.dataset.theme; saveCfg(cfg); theme(btn); }));
     theme(btn);
+    const tuto = panel.querySelector('[data-tutobox]');
+    const fermerTuto = () => { tuto.hidden = true; cfg.tutoVu = VERSION; saveCfg(cfg); };
+    panel.querySelector('[data-tuto]').onclick = () => { tuto.hidden = false; tuto.scrollTop = 0; };
+    tuto.querySelectorAll('[data-tutofin]').forEach((b) => (b.onclick = fermerTuto));
+    tuto.addEventListener('click', (e) => { if (e.target === tuto) fermerTuto(); });
+    if (cfg.tutoVu !== VERSION) tuto.hidden = false;
     if (APP) panel.classList.add('app', 'open'); else fenetre();
     initRc();
     initSim();
     initVa(); initFiches();
     onglet(cfg.onglet || 'rc');
   }
+  /** Tuto (bouton « ? ») : ouvert tout seul à la première ouverture après une mise à jour. */
+  function vueTuto() {
+    const etapes = [
+      ['Analyse RC', 'Dans le jeu, « Copier le rapport », puis colle-le ici et touche <b>Analyser</b>. Tu obtiens ses niveaux et l’armée conseillée, à copier en un geste.'],
+      ['Réglages de l’envoi', 'Renseigne une fois tes armes, ton bouclier et ta cochenille, puis coche les unités à faire évoluer. La sécurité et la marge tampon te protègent si le RC date un peu.'],
+      ['Réplique ÷10', 'L’armée conseillée frappe au moins 3 fois la vie brute de ses défenseurs : sa réplique est alors divisée par 10 (écrasante victoire).'],
+      ['Simulateur', '« Tester dans le simulateur » y envoie l’armée conseillée ; Fight ! rejoue le combat comme le jeu.'],
+      ['VA &amp; TdP', `Mesure sa vitesse d’attaque sur un trajet vu${CODE ? ' ou d’après ses attaques (avec ton code)' : ''}, ses temps de trajet, sa TdP et l’heure de départ de son armée.`],
+      ['Joueurs', 'Les fiches se remplissent toutes seules ; touche un joueur pour le rendre actif dans tous les onglets.'],
+      LITE ? ['Sur ton téléphone', '« Ajouter à l’écran d’accueil » : SimuOpti s’ouvre comme une appli, même hors ligne. Les pastilles en haut changent le thème.']
+        : ['Thème et tuto', 'Les pastilles en haut changent le thème ; le « ? » rouvre ce tuto.'],
+    ];
+    return `<div class="tuto-fond" data-tutobox hidden><div class="tuto" role="dialog" aria-label="Comment utiliser SimuOpti">
+      <div class="tuto-tete"><b>Comment utiliser SimuOpti</b><button type="button" class="tuto-x" data-tutofin aria-label="Fermer le tuto">×</button></div>
+      <div class="mut">${CODE ? 'Tout est calculé sur ton appareil, sauf les fonctions déverrouillées par ton code. Tes réglages et tes fiches restent sur cet appareil.' : 'Tout est calculé dans ton navigateur : rien n’est envoyé nulle part, tes réglages et tes fiches restent sur cet appareil.'}</div>
+      <div class="tuto-sonde"><h3>Important</h3>
+        <p>Pour une meilleure expérience, envoie <b>deux sondes</b> sur ta cible, avec <b>au moins une minute d’écart</b>, avant de simuler.</p>
+        <p>Avec ces deux RC, SimuOpti mesure sa ponte et en déduit sa TdP. Il ajoute alors à l’armée conseillée ce qu’il a pondu depuis ton RC, et peut dater le départ de son armée.</p>
+        <ol><li>Onglet <b>VA &amp; TdP › TdP &amp; départ</b> : colle le 1er RC, puis le 2e.</li><li><b>Calculer</b> : sa TdP est enregistrée dans sa fiche.</li><li>Onglet <b>RC</b> : colle le dernier RC, la ponte est comptée.</li></ol></div>
+      ${etapes.map(([t, x], i) => `<div class="tuto-etape"><span class="num">${i + 1}</span><div><b>${t}</b><p>${x}</p></div></div>`).join('')}
+      <div class="mut tuto-fin">⚠️ Les résultats sont des estimations : vérifie toujours avec le simulateur avant d’attaquer.</div>
+      <button type="button" class="b grand" data-tutofin>J’ai compris</button>
+    </div></div>`;
+  }
+
   /* Fenêtre flottante : déplacer par la barre de titre, redimensionner par le coin, plein écran. Tout est mémorisé. */
   function fenetre() {
     const head = panel.querySelector('header');
@@ -1290,6 +1339,7 @@ window.SIMUOPTI_LITE = true;
       if (!b) return;
       if (b.dataset.copy != null) copier(ui.copieTexte || '', b);
       if (b.dataset.copiearmee != null) copier(b.dataset.copiearmee, b);
+      if (b.dataset.copietexte != null) copier(b.dataset.copietexte, b);
       if (b.dataset.tosim != null && ui.simPrep && ui.simPrep[b.dataset.tosim]) { const sp = ui.simPrep[b.dataset.tosim]; remplirSim(sp); if (sp.nom) choisirFiche(sp.nom, { sauf: ['sim'] }); onglet('sim'); }
     });
     if (cfg.rapport) { ta.value = cfg.rapport; try { render(ta.value, out); } catch (e) { /* rapport illisible */ } }
@@ -1442,6 +1492,11 @@ window.SIMUOPTI_LITE = true;
         let src = exactV ? (r.defMult ? `Vie ×${f2(eMult)} lue sur les tués du rapport.` : `Vie ×${f2(eMult)} calculée d’après l’XP (${f2(r.xpMult.pct)} %).`) : `Tous ses défenseurs sont morts sans XP partielle : seul un plafond de vie (×${f2(eMult)}) est lisible.`;
         if (exactV && combos.length > 1) src += ` ${combos.slice(0, 3).map((c, k) => (k ? `${c.bouclier} + ${c.niveau}` : `Bouclier ${c.bouclier} + ${place === 'dome' ? 'Dôme' : 'Loge'} ${c.niveau}`)).join(', ')}${combos.length > 3 ? '…' : ''} : même vie, donc même résultat.`;
         html += `<div class="mut">${src}</div>`;
+      }
+      // ses niveaux au format « pseudo // A // B // D // L // VA // TdP », à copier
+      if (pd && dn !== 'Moi' && !memeNom(dn, me)) {
+        const ligne = ligneJoueur(pd);
+        html += `<div class="niv-copie"><pre class="copie">${esc(ligne)}</pre><button class="b mini" type="button" data-copietexte="${esc(ligne)}">📋 Copier les niveaux</button></div>`;
       }
       r.warn.forEach((w) => (html += `<div class="warn">⚠ ${esc(w)}</div>`));
 
