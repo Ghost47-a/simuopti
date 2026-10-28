@@ -7,22 +7,22 @@ window.SIMUOPTI_LITE = true;
    *  MOTEUR
    * ===================================================================== */
   const Core = (() => {
-    // vie / attaque / défense / coefficient d'XP / peut gagner de l'XP
+    // vie / attaque / défense / coefficient d'XP (x/17, exact à l'unité près sur le jeu) / peut gagner de l'XP
     const UNITS = {
-      JSN: { nom: 'JSN', vie: 8,  att: 3,  def: 2,  xp: 1,          pex: true  },
-      SN:  { nom: 'SN',  vie: 10, att: 5,  def: 4,  xp: 1.47058824, pex: true  },
-      NE:  { nom: 'NE',  vie: 13, att: 7,  def: 6,  xp: 2,          pex: false },
-      JS:  { nom: 'JS',  vie: 16, att: 10, def: 9,  xp: 2.670597,   pex: true  },
-      S:   { nom: 'S',   vie: 20, att: 15, def: 14, xp: 3.670585,   pex: true  },
-      C:   { nom: 'C',   vie: 30, att: 1,  def: 25, xp: 5.1059,     pex: true  },
-      CE:  { nom: 'CE',  vie: 40, att: 1,  def: 35, xp: 6.96475,    pex: false },
-      A:   { nom: 'A',   vie: 10, att: 30, def: 15, xp: 3.47055,    pex: true  }, // déf 15 mesurée sur rapport
-      AE:  { nom: 'AE',  vie: 12, att: 35, def: 18, xp: 4.1059,     pex: false }, // def 18 mesurée sur rapport
-      SE:  { nom: 'SE',  vie: 27, att: 24, def: 23, xp: 5.411766,   pex: false },
-      T:   { nom: 'T',   vie: 35, att: 55, def: 1,  xp: 7.55295,    pex: true  },
-      TE:  { nom: 'TE',  vie: 50, att: 80, def: 1,  xp: 11.6471,    pex: false },
-      Tu:  { nom: 'Tu',  vie: 50, att: 50, def: 50, xp: 10.694125,  pex: true  },
-      TuE: { nom: 'TuE', vie: 55, att: 55, def: 55, xp: 11.764725,  pex: false },
+      JSN: { nom: 'JSN', vie: 8,  att: 3,  def: 2,  xp: 17/17,     pex: true  },
+      SN:  { nom: 'SN',  vie: 10, att: 5,  def: 4,  xp: 25/17,     pex: true  },
+      NE:  { nom: 'NE',  vie: 13, att: 7,  def: 6,  xp: 34/17,     pex: false },
+      JS:  { nom: 'JS',  vie: 16, att: 10, def: 9,  xp: 45.4/17,   pex: true  },
+      S:   { nom: 'S',   vie: 20, att: 15, def: 14, xp: 62.4/17,   pex: true  },
+      C:   { nom: 'C',   vie: 30, att: 1,  def: 25, xp: 86.8/17,   pex: true  },
+      CE:  { nom: 'CE',  vie: 40, att: 1,  def: 35, xp: 118.4/17,  pex: false },
+      A:   { nom: 'A',   vie: 10, att: 30, def: 15, xp: 59/17,     pex: true  }, // déf 15 mesurée sur rapport
+      AE:  { nom: 'AE',  vie: 12, att: 35, def: 18, xp: 69.8/17,   pex: false }, // def 18 mesurée sur rapport
+      SE:  { nom: 'SE',  vie: 27, att: 24, def: 23, xp: 92/17,     pex: false },
+      T:   { nom: 'T',   vie: 35, att: 55, def: 1,  xp: 128.4/17,  pex: true  },
+      TE:  { nom: 'TE',  vie: 50, att: 80, def: 1,  xp: 198/17,    pex: false },
+      Tu:  { nom: 'Tu',  vie: 50, att: 50, def: 50, xp: 181.8/17,  pex: true  },
+      TuE: { nom: 'TuE', vie: 55, att: 55, def: 55, xp: 200/17,    pex: false },
     };
     // libellés affichés (codes internes inchangés)
     const LAB = { JSN: 'JSN', SN: 'SN', NE: 'NE', JS: 'JS', S: 'S', C: 'C', CE: 'CE', A: 'A', AE: 'AE', SE: 'SE', T: 'Tk', TE: 'TkE', Tu: 'Tu', TuE: 'TuE' };
@@ -388,23 +388,47 @@ window.SIMUOPTI_LITE = true;
       return out;
     }
 
+    /** Déroulé estimé du combat, mêmes règles que le jeu : nombre de tours, pertes de l'attaquant, vainqueur. */
+    function deroule(army, enemy, { bA, bB, eMult, dAm }) {
+      let A = army.map(([c, n]) => [c, n]), D = enemy.map(([c, n]) => [c, n]);
+      const tot = (a) => a.reduce((x, [, n]) => x + n, 0);
+      const pertes = {};
+      let tours = 0;
+      while (tours < 100 && tot(A) > 0 && tot(D) > 0) {
+        tours++;
+        const kD = lossesByDamage(D, sumBy(A, 'att') * bA, eMult);
+        // tous les défenseurs tués au 1er tour : réplique ÷ 10
+        const fact = tours === 1 && kD.reduce((x, [, k]) => x + k, 0) >= tot(D) ? 0.1 : 1;
+        const kA = lossesByDamage(A, sumBy(D, 'def') * fact * dAm, bB);
+        D = D.map(([c, n], i) => [c, n - kD[i][1]]);
+        A = A.map(([c, n], i) => [c, n - kA[i][1]]);
+        for (const [c, k] of kA) if (k) pertes[c] = (pertes[c] || 0) + k;
+      }
+      return { tours, gagne: tot(D) === 0 && tot(A) > 0, pertes };
+    }
+
     /**
      * Envoi optimal depuis l'armée disponible :
      *  1) JSN tampon pour encaisser la réplique,
      *  2) atteindre l'attaque requise avec le moins de « poids XP » possible (meilleur ratio attaque / coefficient XP),
      *  3) s'il reste de la marge sous 100 % d'XP, ajouter des unités qui évoluent (meilleur gain / poids XP).
+     * En deux tours (tours: 2) : la réplique n'est plus divisée par 10, mais il suffit de la moitié de la frappe,
+     * donc l'armée est plus légère et l'XP plus haute (même formule d'XP que le one-shot, vérifiée sur les rapports).
      */
-    function optimize({ enemy, eArmes, eMult, my, avail, facteur = 0.1, cibles = ['T'] }) {
+    function optimize({ enemy, eArmes, eMult, my, avail, facteur = 0.1, cibles = ['T'], tours = 1 }) {
       const order = Object.keys(UNITS);
       const bA = 1 + my.armes / 10, bB = 1 + my.bouclier / 10, secu = my.secu || 1.02;
       const have = Object.fromEntries(order.map((c) => [c, 0]));
       avail.forEach(([c, n]) => (have[c] += n));
       const send = Object.fromEntries(order.map((c) => [c, 0]));
       const vieABattre = sumBy(enemy, 'vie') * eMult * secu;
-      const attReq = vieABattre / bA;
-      const replique = sumBy(enemy, 'def') * (1 + eArmes / 10) * facteur;
-      const jsnNeed = Math.ceil(replique / (UNITS.JSN.vie * bB));
-      const jsnMarge = Math.ceil(jsnNeed * (1 + (my.tampon == null ? TAMPON_DEFAUT : my.tampon) / 100));
+      const dAm = 1 + eArmes / 10, tampon = 1 + (my.tampon == null ? TAMPON_DEFAUT : my.tampon) / 100;
+      const replique = sumBy(enemy, 'def') * dAm * (tours === 2 ? 1 : facteur);
+      let jsnNeed = Math.ceil(replique / (UNITS.JSN.vie * bB));
+      let jsnMarge = Math.ceil(jsnNeed * tampon);
+      const jsnTour1 = jsnNeed;
+      // deux tours : frappe du 1er tour + frappe du 2e (moins les JSN tuées au 1er) ≥ vie
+      const attReq = tours === 2 ? (vieABattre / bA + jsnTour1 * UNITS.JSN.att) / 2 : vieABattre / bA;
       const M = enemy.reduce((s, [c, n]) => s + n * UNITS[c].xp, 0);
       const K = 43.56 * (1 + (my.cochenille || 0) / 10) * (1 + eArmes / 10) * eMult / bB / bA;
       const Nmax = M * Math.sqrt(K / 100);
@@ -433,7 +457,16 @@ window.SIMUOPTI_LITE = true;
         const k = Math.min(have[c] - send[c], Math.ceil((attReq - att) / UNITS[c].att));
         if (k > 0) { send[c] += k; att += k * UNITS[c].att; }
       }
-      const passe = att >= attReq;
+      // deux tours : JSN en plus pour la réplique du 2e tour (défenseurs qui survivent au 1er)
+      if (tours === 2) {
+        const kD = lossesByDamage(enemy, att * bA, eMult * secu);
+        const defReste = enemy.reduce((x, [c, n], i) => x + (n - kD[i][1]) * UNITS[c].def, 0);
+        jsnNeed += Math.ceil(defReste * dAm / (UNITS.JSN.vie * bB));
+        jsnMarge = Math.ceil(jsnNeed * tampon);
+        const ajout = Math.min(have.JSN, jsnMarge) - send.JSN;
+        if (ajout > 0) { send.JSN += ajout; att += ajout * UNITS.JSN.att; }
+      }
+      let passe = att >= attReq;
       // 3) marge sous 100 % d'XP : partagée à parts égales (en poids XP) entre les unités choisies
       if (passe) {
         const fill = order.filter((c) => UNITS[c].pex && cibles.includes(c));
@@ -452,7 +485,12 @@ window.SIMUOPTI_LITE = true;
       }
       const army = order.filter((c) => send[c] > 0).map((c) => [c, send[c]]);
       const pct = Math.min(100, xpPct({ enemy, sent: army, eArmes, eMult, aArmes: my.armes, aBouclier: my.bouclier, cochenille: my.cochenille || 0 }));
-      const losses = Object.fromEntries(lossesByDamage(army, replique, bB));
+      let losses, toursEstimes = 1;
+      if (tours === 2) {
+        const est = deroule(army, enemy, { bA, bB, eMult: eMult * secu, dAm });
+        passe = passe && est.gagne && est.tours <= 2;
+        losses = est.pertes; toursEstimes = est.tours;
+      } else losses = Object.fromEntries(lossesByDamage(army, replique, bB));
       const rows = army.map(([c, n]) => {
         const surv = n - (losses[c] || 0);
         const evol = UNITS[c].pex && passe ? Math.floor(surv * pct / 100) : 0;
@@ -460,8 +498,10 @@ window.SIMUOPTI_LITE = true;
       });
       const pertesHorsJSN = rows.filter((r) => r.c !== 'JSN').reduce((s, r) => s + r.pertes, 0);
       return {
-        rows, passe, att, attReq, vieABattre, replique, jsnNeed, jsnMarge, pct, Nmax,
+        rows, passe, att, attReq, vieABattre, replique, jsnNeed, jsnMarge, pct, Nmax, tours, toursEstimes,
         frappe: att * bA, vieAdverse: vieABattre / secu,
+        frappe2: (2 * att - UNITS.JSN.att * Math.min(send.JSN, jsnTour1)) * bA,
+        jsnPerdues: losses.JSN || 0,
         manqueAtt: passe ? 0 : attReq - att,
         jsnManque: Math.max(0, jsnNeed - have.JSN), pertesHorsJSN,
         gain: rows.reduce((s, r) => s + r.evol * (GAIN[r.c] || 0), 0),
@@ -576,7 +616,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.14.1'; // aligné sur @version
+  const VERSION = '1.15.1'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -753,6 +793,8 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .big{font-weight:800;color:#fff}
   #simuopti-ui .warn.big{color:var(--warn)}#simuopti-ui .ok.big{color:var(--ok)}
   /* ---- Messages (encadrés) et aide repliable ---- */
+  #simuopti-ui .deuxtours{margin:10px 0 4px;padding:8px 10px;border-radius:8px;border:1px solid var(--bronze2);background:var(--carte2)}
+  #simuopti-ui .deuxtours h4{margin:0 0 4px}
   #simuopti-ui .tampon{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0;padding:8px 10px;border-radius:8px;border:1px solid var(--bronze2);border-left:4px solid var(--bronze);background:var(--carte2);font-size:13px}
   #simuopti-ui .tampon b{color:var(--or)}
   #simuopti-ui .tampon input{width:64px!important;text-align:right;font-weight:700}
@@ -1153,18 +1195,34 @@ window.SIMUOPTI_LITE = true;
         const illimite = [['JSN', 1e15], ...(frappeurs.length ? frappeurs : ['T']).map((u) => [u, 1e15])];
         const bloc = (o, avecStock) => {
           let hh = '';
-          if (!o.passe) return `<div class="warn">Impossible de le passer en un tour avec ton armée : il manque ${fmt(o.manqueAtt * (1 + res.my.armes / 10))} de force de frappe (≈ ${fmt(o.manqueAtt / Core.UNITS.T.att)} Tk).</div>`;
+          const deuxT = o.tours === 2, enT = deuxT ? 'en deux tours' : 'en un tour';
+          if (!o.passe) return `<div class="warn">Impossible de le passer ${enT} avec ton armée${o.manqueAtt ? ` : il manque ${fmt(o.manqueAtt * (1 + res.my.armes / 10))} de force de frappe (≈ ${fmt(o.manqueAtt / Core.UNITS.T.att)} Tk)` : ''}.</div>`;
           hh += `<table><tr><th>Unité</th>${avecStock ? '<th>Dispo</th>' : ''}<th>À envoyer</th><th>Pertes</th><th>Évoluent</th></tr>`;
           for (const x of o.rows) hh += `<tr><td>${L(x.c)}</td>${avecStock ? `<td class="mut">${fmt(x.dispo)}</td>` : ''}<td class="big">${fmt(x.envoi)}</td><td>${x.pertes ? fmt(x.pertes) : '—'}</td><td>${x.evol ? `${fmt(x.evol)} → ${L(x.vers)}` : '—'}</td></tr>`;
-          const marge = (o.frappe / o.vieAdverse - 1) * 100;
+          const marge = ((deuxT ? o.frappe2 : o.frappe) / o.vieAdverse - 1) * 100;
           hh += `</table><table style="margin-top:4px">
-            <tr><td>Force de frappe envoyée</td><td class="big ok">${fmt(o.frappe)}</td></tr>
+            <tr><td>${deuxT ? 'Force de frappe sur les deux tours' : 'Force de frappe envoyée'}</td><td class="big ok">${fmt(deuxT ? o.frappe2 : o.frappe)}</td></tr>
             <tr><td>Vie adverse</td><td>${fmt(o.vieAdverse)} <span class="${marge >= 0 ? 'ok' : 'warn'}">(${marge >= 0 ? '✓ dépassée de +' : '✗ '}${f2(marge)} %)</span></td></tr>
             <tr><td>XP prévue</td><td class="${o.pct >= 99.9 ? 'ok' : 'warn'}">${f2(o.pct)} %</td></tr></table>`;
           if (o.jsnManque) hh += `<div class="warn">Il te manque ${fmt(o.jsnManque)} JSN pour encaisser la réplique : d’autres unités vont mourir.</div>`;
           if (o.pertesHorsJSN) hh += `<div class="warn">${fmt(o.pertesHorsJSN)} unités autres que des JSN meurent.</div>`;
-          if (o.pct < 99.9) hh += '<div class="mut">XP partielle : ce mélange est déjà le plus léger qui passe en un tour avec ces unités.</div>';
+          if (o.pct < 99.9) hh += `<div class="mut">XP partielle : ce mélange est déjà le plus léger qui passe ${enT} avec ces unités.</div>`;
+          if (deuxT && o.toursEstimes === 1) hh += '<div class="mut">Avec ce mélange il passe finalement en un tour.</div>';
           return hh;
+        };
+        // deux tours : seulement si le one-shot n'atteint pas 100 % d'XP et que plus d'unités évoluent
+        let a2 = false;
+        const evolTot = (o) => o.rows.reduce((x, r) => x + r.evol, 0);
+        const blocDeux = (o1, avail, avecStock) => {
+          if (!o1.passe || o1.pct >= 99.9) return '';
+          const o2 = Core.optimize({ enemy: r.combat.defenders, eArmes: r.defArmes, eMult, my: res.my, avail, cibles, tours: 2 });
+          if (!o2.passe || evolTot(o2) <= evolTot(o1)) return '';
+          a2 = true;
+          return `<div class="deuxtours"><h4>⚔️⚔️ En deux tours : plus d’XP${avecStock ? ' (depuis ton armée)' : ''}</h4>
+            <div class="mut">Sans one-shot, la réplique n’est pas divisée par 10 et plus de JSN meurent, mais deux fois moins de frappe suffit : l’armée est plus légère, donc l’XP plus haute. Surtout rentable contre une défense faible (Tanks, Artilleuses).</div>`
+            + bloc(o2, avecStock)
+            + `<div class="ok"><b>+${fmt(evolTot(o2) - evolTot(o1))}</b> unités évoluent en plus · <b>+${fmt(o2.jsnPerdues - (o1.rows.find((x) => x.c === 'JSN') || { pertes: 0 }).pertes)}</b> JSN perdues en plus (tampon de ${fmt(o2.jsnMarge)} JSN pour les deux répliques)</div>
+            <div class="row"><button class="b mini alt" type="button" data-copiearmee="${esc(texteArmee(o2.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée en deux tours</button></div></div>`;
         };
         const o0 = Core.optimize({ enemy: r.combat.defenders, eArmes: r.defArmes, eMult, my: res.my, avail: illimite, cibles });
         html += `<h4 style="margin-top:10px">🎯 Pour le passer en un tour (avec tes niveaux)</h4>
@@ -1173,19 +1231,19 @@ window.SIMUOPTI_LITE = true;
           <tr class="tampon-l"><td>🛡️ JSN tampon : minimum → avec la marge (bouclier ${res.my.bouclier}, ${res.my.source.bouclier})</td><td class="big">${fmt(o0.jsnNeed)} → ${fmt(o0.jsnMarge)}</td></tr>
           </table>
           <div class="tampon">🛡️ <b>Marge tampon</b> <input type="number" min="0" max="500" step="5" data-tampon value="${cfg.tampon ?? Core.TAMPON_DEFAUT}"> % <span>= <b>+${fmt(o0.jsnMarge - o0.jsnNeed)} JSN</b> au-delà du minimum, si l’adversaire a pondu depuis ce RC</span></div>
-          <div class="mut" style="margin-top:6px">Armée conseillée (${cibles.map(L).join(' + ')}) :</div>` + bloc(o0, false);
+          <div class="mut" style="margin-top:6px">Armée conseillée (${cibles.map(L).join(' + ')}) :</div>` + bloc(o0, false) + blocDeux(o0, illimite, false);
         let choisi = o0;
         const mine = Core.parseArmyLoose(cfg.armee);
         if (mine.length) {
           const o = Core.optimize({ enemy: r.combat.defenders, eArmes: r.defArmes, eMult, my: res.my, avail: mine, cibles });
-          html += `<h4 style="margin-top:8px">Envoi optimal depuis ton armée</h4>` + bloc(o, true);
+          html += `<h4 style="margin-top:8px">Envoi optimal depuis ton armée</h4>` + bloc(o, true) + blocDeux(o, mine, true);
           if (o.passe) choisi = o;
         }
         if (!exactV) html += '<div class="warn">Vie estimée par plafond : la vraie vie est plus basse, l’armée conseillée est prudente.</div>';
         html += `<details class="aide"><summary>Pourquoi une marge tampon de JSN ?</summary><div>Les JSN partent en tête de ton armée : la réplique du défenseur tue les unités dans l’ordre de l’armée, donc ce sont elles qui meurent à la place des unités qui frappent et qui évoluent. Le minimum est calculé sur l’armée vue dans ce RC. Mais entre ce RC et l’arrivée de ton attaque, l’adversaire continue de pondre : sa réplique grandit, et sans marge ce sont tes autres unités qui meurent et n’évoluent pas. La marge ajoute ce pourcentage de JSN au minimum : <b>${cfg.tampon ?? Core.TAMPON_DEFAUT} %</b> ici (20 % par défaut). Augmente-la si le RC est ancien ou si l’adversaire pond vite (voir sa TdP dans l’onglet VA &amp; TdP), baisse-la si le RC vient d’être pris. Elle ne touche pas la vie à battre : si sa ponte est forte, refais un RC récent avant d’attaquer.</div></details>`;
         html += '<div class="estimation">⚠️ Attention : ceci n’est qu’une estimation et nécessite tout de même une vérification par simulation.</div>';
         html += '<div class="row">';
-        html += `${choisi.passe ? `<button class="b mini alt" type="button" data-copiearmee="${esc(texteArmee(choisi.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée conseillée</button>` : ''}</div>`;
+        html += `${choisi.passe ? `<button class="b mini alt" type="button" data-copiearmee="${esc(texteArmee(choisi.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée conseillée${a2 ? ' (un tour)' : ''}</button>` : ''}</div>`;
       }
       html += '</div>';
     });
