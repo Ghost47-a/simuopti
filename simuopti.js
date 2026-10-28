@@ -718,7 +718,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.17.4'; // aligné sur @version
+  const VERSION = '1.17.5'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -1161,7 +1161,7 @@ window.SIMUOPTI_LITE = true;
     ];
     return `<div class="tuto-fond" data-tutobox hidden><div class="tuto" role="dialog" aria-label="Comment utiliser SimuOpti">
       <div class="tuto-tete"><b>Comment utiliser SimuOpti</b><button type="button" class="tuto-x" data-tutofin aria-label="Fermer le tuto">×</button></div>
-      <div class="mut">${CODE ? 'Tout est calculé sur ton appareil, sauf les fonctions déverrouillées par ton code. Tes réglages et tes fiches restent sur cet appareil.' : 'Tout est calculé dans ton navigateur : rien n’est envoyé nulle part, tes réglages et tes fiches restent sur cet appareil.'}</div>
+      <div class="mut">${CODE ? 'Tout est calculé sur ton appareil, sauf les fonctions déverrouillées par ton code. Tes réglages et tes fiches restent sur cet appareil.' : 'Tout est calculé dans ton navigateur : seul un compteur de visites anonyme est envoyé ; tes RC, tes réglages et tes fiches restent sur cet appareil.'}</div>
       <div class="tuto-sonde"><h3>Important</h3>
         <p>Pour une meilleure expérience, envoie <b>deux sondes</b> sur ta cible, avec <b>au moins une minute d’écart</b>, avant de simuler.</p>
         <p>Avec ces deux RC, SimuOpti mesure sa ponte et en déduit sa TdP. Il ajoute alors à l’armée conseillée ce qu’il a pondu depuis ton RC, et peut dater le départ de son armée.</p>
@@ -2101,3 +2101,4 @@ window.SIMUOPTI_LITE = true;
   if (document.body) demarrer(); else window.addEventListener('DOMContentLoaded', demarrer);
 })();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+try { new Image().src = 'https://greeny47.goatcounter.com/count?p=' + encodeURIComponent(location.pathname) + '&rnd=' + Math.random().toString(36).slice(2); } catch (e) { /* hors ligne */ }
