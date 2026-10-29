@@ -636,7 +636,8 @@ window.SIMUOPTI_LITE = true;
       return j ? `${j} j ${h} h ${p(m)}` : h ? `${h} h ${p(m)} min ${p(x)} s` : m ? `${m} min ${p(x)} s` : `${x} s`;
     }
     const TDP_CONST = 1 / Math.log(10 / 9);                  // chaque niveau accélère la ponte de ×10/9
-    const TDP_BASE = { JSN: 300, SN: 450, NE: 570, JS: 740, S: 1000, A: 1440, AE: 1520, SE: 1450, T: 1860, TE: 1860, Tu: 2740, TuE: 2740 };
+    // secondes pour pondre une unité à TdP 0 (Concierge : 1 000 en 5 h 47 min 21 s à TdP 39 → 1 269 s)
+    const TDP_BASE = { JSN: 300, SN: 450, NE: 570, JS: 740, S: 1000, C: 1269, A: 1440, AE: 1520, SE: 1450, T: 1860, TE: 1860, Tu: 2740, TuE: 2740 };
     function tdp({ p1, k, p2, x, t, tp }) {
       const u = (p2 + k + x) - p1;
       if (!(u > 0) || !(t > 0) || !(tp > 0)) return { u, tdp: null };
@@ -718,7 +719,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.17.5'; // aligné sur @version
+  const VERSION = '1.17.8'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -792,6 +793,13 @@ window.SIMUOPTI_LITE = true;
   const resumeFiche = (j) => `A ${nivTxt(j, 'armes')} · B ${nivTxt(j, 'bouclier')} · D ${nivTxt(j, 'dome')} · L ${nivTxt(j, 'loge')} · VA ${j.va ?? '?'} · TdP ${j.tdp ?? '?'}`;
   const ligneFiche = (j) => `${j.nom} // A:${nivTxt(j, 'armes')} // B:${nivTxt(j, 'bouclier')} // D:${nivTxt(j, 'dome')} // L:${nivTxt(j, 'loge')} // VA:${j.va ?? '?'} // TdP:${j.tdp ?? '?'}`;
   const dateCourte = (ms) => new Date(ms).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  /** Longue durée « 8 502 A 11 M 3 J » (ans de 365 j, mois de 30 j) ; moins d'un jour : « 3 h 05 min 00 s ». */
+  const dureeLongue = (s) => {
+    const jours = Math.floor(s / 86400);
+    if (jours < 1) return Core.dureeTexte(s);
+    const a = Math.floor(jours / 365), m = Math.floor((jours % 365) / 30), j = (jours % 365) % 30;
+    return [a ? `${fmt(a)} A` : '', a || m ? `${m} M` : '', `${j} J`].filter(Boolean).join(' ');
+  };
   /**
    * Joueur actif : mémorisé, affiché dans la barre, et recopié dans les autres onglets (sauf ceux de « sauf »).
    * Appelé quand on choisit une fiche, et quand un onglet vient de travailler sur un joueur.
@@ -990,6 +998,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .reglages .ponte input{width:auto!important}
   #simuopti-ui .niv-copie{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
   #simuopti-ui .niv-copie pre.copie{flex:1;min-width:0;margin:0;overflow-x:auto;white-space:pre}
+  #simuopti-ui .combat .tdp0{font-size:12.5px;font-weight:700;color:var(--or);background:var(--carte2);border:1px solid var(--ligne2);border-radius:999px;padding:2px 10px;white-space:nowrap}
   #simuopti-ui .depart-est{margin-top:5px;color:var(--ko);font-weight:600}
   #simuopti-ui .ponte-note{margin:6px 0;padding:7px 10px;border-radius:8px;background:var(--carte2);border:1px solid var(--ligne2);font-size:12.5px}
   #simuopti-ui .combat .tete,#simuopti-ui .prop .tete{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px 8px}
@@ -1384,13 +1393,38 @@ window.SIMUOPTI_LITE = true;
     return autres;
   }
 
+  /**
+   * Pas de combat dans le texte : on lit au moins une armée (« 3 618 Jeunes Soldates Naines, … ») et on donne le temps
+   * qu'il faut pour la pondre à TdP 0, et à la TdP du joueur actif si sa fiche la connaît.
+   */
+  function vuePonteSeule(text) {
+    const armee = Core.parseArmyLoose(text);
+    if (!armee.length) return '<p class="warn">Aucun combat ni aucune armée reconnus dans ce texte.</p>';
+    const j = ficheDe(cfg.actif), tdpJ = j && j.tdp != null ? j.tdp : null;
+    const facteur = tdpJ != null ? Math.pow(10 / 9, tdpJ) : null;
+    let total = 0;
+    const sansBase = [];
+    const lignes = armee.map(([c, n]) => {
+      const base = Core.TDP_BASE[c];
+      if (!base) { sansBase.push(L(c)); return `<tr><td>${L(c)}</td><td>${fmt(n)}</td><td class="mut">durée inconnue</td>${facteur ? '<td class="mut">—</td>' : ''}</tr>`; }
+      const s = n * base; total += s;
+      return `<tr><td>${L(c)}</td><td>${fmt(n)}</td><td>${dureeLongue(s)}</td>${facteur ? `<td>${dureeLongue(s / facteur)}</td>` : ''}</tr>`;
+    }).join('');
+    return `<div class="card"><h4>⏱ Temps de ponte de cette armée</h4>
+      <div class="mut">Aucun combat reconnu : armée lue dans le texte. Temps qu’il faut pour la pondre, unité par unité.</div>
+      <table><tr><th>Unité</th><th>Nombre</th><th>À TdP 0</th>${facteur ? `<th>À TdP ${tdpJ} (${esc(j.nom)})</th>` : ''}</tr>${lignes}
+        <tr><td><b>Total</b></td><td><b>${fmt(armee.reduce((x, [, n]) => x + n, 0))}</b></td><td class="big">${dureeLongue(total)}</td>${facteur ? `<td class="big">${dureeLongue(total / facteur)}</td>` : ''}</tr></table>
+      ${sansBase.length ? `<div class="mut">Non comptés (durée de ponte inconnue) : ${sansBase.join(', ')}.</div>` : ''}
+      <div class="mut">À TdP 0 : JSN 5 min, Soldate 16 min 40 s, Tank 31 min… par unité ; chaque niveau de TdP accélère la ponte de ×10/9.</div></div>`;
+  }
+
   /** Remet les réglages sous le rapport avant de réécrire le résultat (ils seraient détruits avec lui). */
   function rangerReglages() { if (ui.reglages && ui.reglagesHome) ui.reglagesHome.appendChild(ui.reglages); }
 
   function render(text, out, { choisir = false } = {}) {
     rangerReglages();
     const res = Core.analyseText(text, cfg);
-    if (!res.analyses.length) { out.innerHTML = '<p class="warn">Aucun combat reconnu dans ce texte.</p>'; return; }
+    if (!res.analyses.length) { out.innerHTML = vuePonteSeule(text); return; }
     const me = cfg.pseudo || 'Moi';
     const adversaires = noterAnalyse(res, text, me);
     // un seul adversaire dans les rapports : il devient le joueur actif (sa fiche remplit les autres onglets)
@@ -1467,7 +1501,11 @@ window.SIMUOPTI_LITE = true;
           }
         }
       }
+      // temps qu'il aurait fallu pour pondre l'armée vue dans ce RC à TdP 0 (secondes par unité : TDP_BASE)
+      const ponte0 = r.combat.defenders.reduce((x, [c, n]) => x + (Core.TDP_BASE[c] ? n * Core.TDP_BASE[c] : 0), 0);
+      const sansBase = r.combat.defenders.filter(([c, n]) => n > 0 && !Core.TDP_BASE[c]).map(([c]) => L(c));
       html += `<div class="card combat"><div class="tete"><h4>⚔️ ${esc(dn)}${place ? ' · ' + LIEU_LONG[place] : ''}${h.colonie ? ' (colonie)' : ''}</h4>
+        ${ponte0 > 0 ? `<span class="tdp0" title="Temps qu’il aurait fallu pour pondre l’armée vue dans ce RC à TdP 0${sansBase.length ? ` (sans les ${sansBase.join(', ')} : durée de ponte inconnue)` : ''}">⏱ ${dureeLongue(ponte0)} à TdP 0${sansBase.length ? ' *' : ''}</span>` : ''}
         <span class="mut">${memeNom(an, me) || an === 'Moi' ? '' : esc(an) + ' · '}${nbT} tour${nbT > 1 ? 's' : ''}${r.oneShot ? ' · one-shot' : ''}</span></div>`;
       html += `<div class="mut">Défense${ponte && ponte.n > 0 ? ' au RC' : ''} : ${armyStr(r.combat.defenders)}</div>`;
       // départ estimé de son armée, calculé dans VA & TdP avec les deux RC (enregistré dans sa fiche)

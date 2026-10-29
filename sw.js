@@ -1,4 +1,4 @@
-const CACHE = 'simuopti-1.17.5';
+const CACHE = 'simuopti-1.17.8';
 const FICHIERS = ['./', 'index.html', 'simuopti.js', 'manifest.webmanifest', 'icone-192.png', 'icone-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FICHIERS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
