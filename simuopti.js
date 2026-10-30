@@ -589,6 +589,7 @@ window.SIMUOPTI_LITE = true;
       return {
         rounds, issue, oneShot: issue === 'att' && rounds.length === 1, xp, mA, mD,
         apresAtt: apres, apresDef: Object.fromEntries(D.map(([c, n]) => [c, entieres(n)])),
+        pertesAtt: Object.fromEntries(pertesEntre(A0, A)), pertesDef: Object.fromEntries(pertesEntre(D0, D)),
         totaux: { aVie: sumBy(A0, 'vie') * mA, aDeg: sumBy(A0, 'att') * (1 + t.aA / 10), dVie: sumBy(D0, 'vie') * mD, dDeg: sumBy(D0, 'def') * (1 + t.dA / 10) },
         A0, D0,
       };
@@ -719,7 +720,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.17.8'; // aligné sur @version
+  const VERSION = '1.17.10'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -812,6 +813,16 @@ window.SIMUOPTI_LITE = true;
     if (!sauf.includes('va') && ui.remplirVa) ui.remplirVa(j);
     majFiches();
   }
+  /** Aucun joueur actif : vide ses niveaux dans les autres onglets (les fiches restent dans l'onglet Joueurs). */
+  function aucuneFiche() {
+    cfg.actif = null; saveCfg(cfg);
+    const s = lireSim();
+    ui.simNom = '';
+    remplirSim({ def: {}, tech: { dB: 0, dA: 0, dC: 0 }, lieu: { type: s.lieu.type, dome: 0, loge: 0 } });
+    if (ui.remplirVa) ui.remplirVa({ nom: '', va: null, tdp: '', stock: '', unite: '' });
+    if (ui.rcTa && ui.rcTa.value.trim()) render(ui.rcTa.value, ui.rcOut);
+    majFiches();
+  }
   /** Défenseur du simulateur d'après la fiche : dernière défense vue chez lui, ses niveaux (inconnus = 0). */
   function remplirSimFiche(j) {
     const s = lireSim();
@@ -827,6 +838,8 @@ window.SIMUOPTI_LITE = true;
     const j = ficheDe(cfg.actif);
     const inp = panel.querySelector('[data-fiche]');
     if (inp && racine.activeElement !== inp) inp.value = j ? j.nom : '';
+    const bAucun = panel.querySelector('[data-aucun]');
+    if (bAucun) bAucun.disabled = !j;
     const res = panel.querySelector('[data-fres]');
     if (res) res.innerHTML = j ? resumePastilles(j) : '<span class="mut">aucun joueur choisi</span>';
     const sf = panel.querySelector('[data-simfiche]');
@@ -909,6 +922,9 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .fbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;padding:7px 12px;border-bottom:1px solid var(--ligne);background:var(--carte);font-size:12px}
   #simuopti-ui .fbar .lib{color:var(--mut);font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.5px}
   #simuopti-ui .fbar input{width:150px!important;flex:none;font-weight:700}
+  #simuopti-ui .fbar .aucun{flex:none;background:transparent;color:var(--mut);border:1px solid var(--ligne2);border-radius:6px;padding:3px 8px;font:600 11px system-ui,sans-serif;cursor:pointer}
+  #simuopti-ui .fbar .aucun:hover{color:var(--texte);border-color:var(--fort)}
+  #simuopti-ui .fbar .aucun[disabled]{opacity:.4;cursor:default}
   #simuopti-ui .fbar [data-fres]{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:4px}
   #simuopti-ui .pill{display:inline-flex;align-items:baseline;gap:3px;padding:1px 7px;border-radius:10px;background:var(--champ);border:1px solid var(--ligne);font-size:12px;white-space:nowrap}
   #simuopti-ui .pill i{font-style:normal;color:var(--mut);font-size:10px;font-weight:700}
@@ -921,7 +937,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .vue[hidden],#simuopti-ui [data-vsec][hidden]{display:none}
   #simuopti-ui .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
   #simuopti-ui label{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--mut)}
-  #simuopti-ui input[type=number],#simuopti-ui input[type=text],#simuopti-ui input[type=password],#simuopti-ui select{width:64px;background:var(--champ);color:var(--texte);border:1px solid var(--ligne2);border-radius:6px;padding:4px 6px;font:13px system-ui,sans-serif;outline:none}
+  #simuopti-ui input[type=number],#simuopti-ui input[type=text],#simuopti-ui input[type=password],#simuopti-ui input[type=datetime-local],#simuopti-ui select{width:64px;background:var(--champ);color:var(--texte);border:1px solid var(--ligne2);border-radius:6px;padding:4px 6px;font:13px system-ui,sans-serif;outline:none}
   #simuopti-ui input[type=text]{width:110px}
   #simuopti-ui input:focus,#simuopti-ui select:focus,#simuopti-ui textarea:focus{border-color:var(--bronze);box-shadow:0 0 0 2px var(--bronze2)}
   #simuopti-ui textarea{width:100%;box-sizing:border-box;height:110px;background:var(--champ);color:var(--texte);border:1px solid var(--ligne2);border-radius:8px;padding:7px;font:12px ui-monospace,Consolas,monospace;outline:none}
@@ -1129,7 +1145,7 @@ window.SIMUOPTI_LITE = true;
         <button type="button" data-reset title="Remettre en place (position et taille d'origine)">⟲</button>
         <button type="button" data-max title="Agrandir en plein écran">⤢</button>
         <button type="button" data-x title="Fermer">×</button></span></header>
-      <div class="fbar" title="Joueur actif : sa fiche remplit les autres onglets"><span class="lib">📇 Joueur actif</span><input type="text" data-fiche list="simuopti-fiches" placeholder="Choisir un joueur…" autocomplete="off"><datalist id="simuopti-fiches"></datalist><span class="mut" data-fres></span></div>
+      <div class="fbar" title="Joueur actif : sa fiche remplit les autres onglets"><span class="lib">📇 Joueur actif</span><input type="text" data-fiche list="simuopti-fiches" placeholder="Choisir un joueur…" autocomplete="off"><datalist id="simuopti-fiches"></datalist><button type="button" class="aucun" data-aucun title="Aucun joueur : vide ses niveaux dans tous les onglets">✕ Aucun</button><span class="mut" data-fres></span></div>
       <nav>${onglets.map(([k, i, l, c]) => `<button type="button" data-tab="${k}"><span class="ico">${i}</span><span class="long">${l}</span><span class="court">${c}</span></button>`).join('')}</nav>
       <div class="body">
         <section class="vue" data-vue="rc">${vueRc()}</section>
@@ -1662,6 +1678,7 @@ window.SIMUOPTI_LITE = true;
             ${lignes}
             <tr class="tot"><td data-tva>0</td><td></td><td class="c">❤ Vie</td><td></td><td data-tvd>0</td></tr>
             <tr class="tot"><td data-tda>0</td><td></td><td class="c">⚔ Dégât</td><td></td><td data-tdd>0</td></tr>
+            <tr class="tot" data-pertes hidden><td data-pta></td><td></td><td class="c" title="Temps qu’il faudrait pour repondre les unités perdues dans ce combat, à TdP 0">⏱ Pertes à TdP 0</td><td></td><td data-ptd></td></tr>
           </table>
           <div class="collebox" data-collebox hidden>
             <b data-colletitre></b>
@@ -1747,7 +1764,7 @@ window.SIMUOPTI_LITE = true;
     const msg = v.querySelector('[data-msg]'), acts = v.querySelector('[data-acts]');
     let avant = null, apres = null, dernier = '', cote = 'att';
     const boite = v.querySelector('[data-collebox]');
-    v.addEventListener('input', (e) => { if (e.target.matches('input')) { majTotaux(); garderSim(); } });
+    v.addEventListener('input', (e) => { if (e.target.matches('input')) { majTotaux(); garderSim(); v.querySelector('[data-pertes]').hidden = true; } });
     v.addEventListener('change', (e) => { if (e.target.matches('input[type=radio]')) { majTotaux(); garderSim(); } });
     v.addEventListener('focusout', (e) => { if (e.target.matches('input.n')) e.target.value = nombreAff(Core.toInt(e.target.value)); });
     v.addEventListener('focusin', (e) => { if (e.target.matches('input.n')) setTimeout(() => e.target.select(), 0); });
@@ -1789,7 +1806,19 @@ window.SIMUOPTI_LITE = true;
       const r = Core.simulate(s);
       avant = { att: s.att, def: s.def };
       apres = { att: r.apresAtt, def: r.apresDef };
-      v.querySelector('[data-av]').classList.add('on'); v.querySelector('[data-ap]').classList.remove('on');
+      // affiche directement les armées restantes (« Avant Combat » pour revenir)
+      remplirSim({ att: apres.att, def: apres.def });
+      v.querySelector('[data-ap]').classList.add('on'); v.querySelector('[data-av]').classList.remove('on');
+      // pertes de chaque camp en temps de ponte à TdP 0 (secondes par unité : TDP_BASE) ; * = unité sans durée connue
+      const ponte0 = (pertes) => {
+        const e = Object.entries(pertes).filter(([, n]) => n > 0);
+        const s0 = e.reduce((x, [c, n]) => x + (Core.TDP_BASE[c] ? n * Core.TDP_BASE[c] : 0), 0);
+        const inc = e.some(([c]) => !Core.TDP_BASE[c]);
+        return e.length ? `${s0 ? dureeLongue(s0) : '—'}${inc ? ' *' : ''}` : 'aucune';
+      };
+      v.querySelector('[data-pta]').textContent = ponte0(r.pertesAtt);
+      v.querySelector('[data-ptd]').textContent = ponte0(r.pertesDef);
+      v.querySelector('[data-pertes]').hidden = false;
       // en-tête comme sur les rapports du jeu (« Vous attaquez la Loge Impériale de … »)
       const lieuTxt = { terrain: 'le terrain de chasse', dome: 'la fourmilière', loge: 'la Loge Impériale' }[s.lieu.type];
       const entete = s.pos === 'def' ? `Simulation attaque votre ${lieuTxt.replace(/^(le|la) /, '')}` : `Vous attaquez ${lieuTxt} de ${ui.simNom || 'Simulation'}`;
@@ -1816,7 +1845,7 @@ window.SIMUOPTI_LITE = true;
       remplirSim({ att: Object.fromEntries(a) });
     };
     v.querySelector('[data-mytech]').onclick = () => remplirSim({ tech: { aB: cfg.bouclier || 0, aA: cfg.armes || 0, aC: cfg.cochenille || 0 } });
-    v.querySelector('[data-vider]').onclick = () => { ui.simNom = ''; remplirSim({ att: {}, def: {} }); msg.textContent = ''; acts.hidden = true; avant = apres = null; };
+    v.querySelector('[data-vider]').onclick = () => { ui.simNom = ''; remplirSim({ att: {}, def: {} }); msg.textContent = ''; acts.hidden = true; avant = apres = null; v.querySelector('[data-pertes]').hidden = true; };
     if (cfg.sim) remplirSim(cfg.sim); else remplirSim({ tech: { aB: cfg.bouclier || 0, aA: cfg.armes || 0, aC: cfg.cochenille || 0 } });
   }
 
@@ -1878,7 +1907,7 @@ window.SIMUOPTI_LITE = true;
         <div data-tpres></div>
         <details class="aide"><summary>Formule</summary><div>Par type d’unité, pondues entre les deux RC : u = (défense au RC 2 + tués au RC 1 + évoluées) − défense au RC 1, puis TdP = 9,4912 × (ln(tp / t) + ln(u)).</div></details>
       </div>
-      <div class="card depart-card" data-vsec="tdp"><h4>🕐 Heure de départ de l’adversaire</h4><div data-depart><div class="mut">Colle 2 RC, ou 1 seul RC avec sa TdP, puis « Calculer ».</div></div></div>
+      <div class="card depart-card" data-vsec="tdp"><h4>🕐 Heure de départ de l’adversaire</h4><div data-depart><div class="mut">Colle 2 RC, ou 1 seul RC avec sa TdP, puis « Calculer ».</div></div><div data-cibles></div></div>
       <div class="mut" style="margin:8px 2px">📇 Les VA, TdP et heures de départ calculées ici vont dans la fiche du joueur (onglet Joueurs) ; choisir un joueur remplit cet onglet.</div>`;
   }
   function initVa() {
@@ -1911,7 +1940,7 @@ window.SIMUOPTI_LITE = true;
       met('[data-tp=niv]', j.tdp ?? ''); met('[data-tp=stock]', j.stock ?? ''); met('[data-tp=unite]', j.unite || '');
       if (j.rcs) { met('[data-tp=rc1]', j.rcs.rc1 || ''); met('[data-tp=rc2]', j.rcs.rc2 || ''); cfg.tdpRc = { rc1: j.rcs.rc1 || '', rc2: j.rcs.rc2 || '' }; saveCfg(cfg); }
       const cb = v.querySelector('[data-cb=nom]');
-      if (cb) { cb.value = j.nom; met('[data-cb=va]', j.va ?? ''); }
+      if (cb) { cb.value = j.nom; met('[data-cb=va]', j.va ?? ''); met('[data-cb=dep]', depTexte(j.depart)); }
       if (ui.vaOly && !memeNom(ui.vaOly.a.pseudo, j.nom)) { q('[data-vores]').innerHTML = ''; ui.vaOly = null; }
     };
     q('[data-vago]').onclick = () => {
@@ -2111,11 +2140,12 @@ window.SIMUOPTI_LITE = true;
     const inp = panel.querySelector('[data-fiche]');
     inp.addEventListener('change', () => {
       const nom = inp.value.trim();
-      if (!nom) { cfg.actif = null; saveCfg(cfg); majFiches(); return; }
+      if (!nom) { aucuneFiche(); return; }
       const j = ficheDe(nom) || Object.assign(joueur(nom), { maj: Date.now() });
       inp.blur(); choisirFiche(j.nom);
     });
     inp.addEventListener('focus', () => inp.select());
+    panel.querySelector('[data-aucun]').onclick = () => { inp.value = ''; aucuneFiche(); };
     majFiches();
   }
 
