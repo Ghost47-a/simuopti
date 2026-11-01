@@ -81,7 +81,7 @@ window.SIMUOPTI_LITE = true;
       const lines = text.split(/\r?\n/);
       const combats = [];
       let header = null, cur = null, dateVue = null;
-      const dmgRe = new RegExp('inflige[sz]?\\s+(' + NUM + ')\\(\\+\\s*(' + NUM + ')\\)\\s*d[ée]g[âa]ts.*?\\btue[sz]?\\s+(' + NUM + ')', 'i');
+      const dmgRe = new RegExp('inflige[sz]?\\s+(' + NUM + ')\\(\\+\\s*-?(' + NUM + ')\\)\\s*d[ée]g[âa]ts.*?\\btue[sz]?\\s+(' + NUM + ')', 'i');
       const xpRe = new RegExp('^\\s*-\\s*(' + NUM + ')\\s+(.+?)\\s+sont devenues des\\s+(.+?)\\s*$', 'i');
       for (const raw of lines) {
         const line = raw.replace(/\[\/?[a-z]+(?:=[^\]]*)?\]/gi, '').trim();
@@ -484,7 +484,9 @@ window.SIMUOPTI_LITE = true;
         const fill = order.filter((c) => UNITS[c].pex && cibles.includes(c));
         for (let tour = 0; tour < 5; tour++) {
           const room = Nmax - poids();
-          const dispo = fill.filter((c) => have[c] - send[c] > 0);
+          // JSN seulement s'il n'y a rien d'autre à faire évoluer : leur rôle est d'encaisser la réplique
+          let dispo = fill.filter((c) => c !== 'JSN' && have[c] - send[c] > 0);
+          if (!dispo.length) dispo = fill.filter((c) => have[c] - send[c] > 0);
           if (room <= 1 || !dispo.length) break;
           const part = room / dispo.length;
           let ajout = 0;
@@ -548,7 +550,7 @@ window.SIMUOPTI_LITE = true;
      *  - XP de l'attaquant vainqueur : même % pour toutes les unités qui évoluent, appliqué aux survivants
      *    fractionnaires (l'unité blessée n'évolue pas). */
     const nomUnite = (c, n) => NOMS[c][n > 1 ? 1 : 0];
-    const ceilAff = (x) => Math.ceil(x - 1e-6);
+    const ceilAff = (x) => Math.ceil(x - 1e-6) + 0; // + 0 : jamais de « -0 » dans le message
     function multLieu(bouclier, lieu) {
       const b = 1 + bouclier / 10;
       if (!lieu || lieu.type === 'terrain') return b;
@@ -669,7 +671,14 @@ window.SIMUOPTI_LITE = true;
       const t = (t2 - t1) / 1000;
       if (!(t > 0)) return { erreur: 'Le RC 2 doit être postérieur au RC 1.' };
       const d1 = defenseEtPertes(c1), d2 = defenseEtPertes(c2);
-      const evol = opts.evol || {};
+      // un type baisse et son type évolué monte : ce sont des évolutions, pas de la ponte (sauf nombre indiqué à la main)
+      const auto = {}, evolDetectees = [];
+      if (!opts.evol) for (const [f, t] of Object.entries(EVOL)) {
+        const net = (k) => (d2.avant[k] || 0) + (d1.pertes[k] || 0) - (d1.avant[k] || 0) + (auto[k] || 0);
+        const baisse = net(f), hausse = net(t);
+        if (baisse < 0 && hausse > 0) { const n = Math.min(-baisse, hausse); auto[f] = (auto[f] || 0) + n; auto[t] = (auto[t] || 0) - n; evolDetectees.push([f, t, n]); }
+      }
+      const evol = opts.evol || auto;
       const types = Object.keys(UNITS).filter((k) => d1.avant[k] != null || d2.avant[k] != null);
       const lignes = types.map((k) => {
         const p1 = d1.avant[k] || 0, kk = d1.pertes[k] || 0, p2 = d2.avant[k] || 0, x = evol[k] || 0;
@@ -681,7 +690,8 @@ window.SIMUOPTI_LITE = true;
       const valides = lignes.filter((l) => l.tdp != null);
       const best = valides.sort((a, b) => b.u - a.u)[0] || null;
       const def1 = (c1.header && c1.header.def) || null, def2 = (c2.header && c2.header.def) || null;
-      return { t, t1, t2, lignes, best, nom: def2 || def1, memeJoueur: !def1 || !def2 || def1.toLowerCase() === def2.toLowerCase(), apresRc2: d2.apres, pertesRc2: d2.pertes };
+      const nomRc = def2 || def1;
+      return { t, t1, t2, lignes, best, evolDetectees, nom: nomRc === 'Simulation' ? null : nomRc, memeJoueur: !def1 || !def2 || def1.toLowerCase() === def2.toLowerCase(), apresRc2: d2.apres, pertesRc2: d2.pertes };
     }
 
     /** Rythme de ponte (unités par seconde) d'après le niveau de TdP : (10/9)^TdP / tp. */
@@ -720,13 +730,13 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.17.10'; // aligné sur @version
+  const VERSION = '1.18.0'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
   const LITE = window.SIMUOPTI_LITE === true;
   const CODE = APP && !LITE; // fonctions en ligne déverrouillées par un code : APK et exe seulement
-  const DEFAUT = { armes: 0, bouclier: 0, cochenille: 0, secu: 1.02, tampon: Core.TAMPON_DEFAUT, pseudo: '', xpUnits: ['T'], onglet: 'rc', joueurs: {} };
+  const DEFAUT = { armes: 0, bouclier: 0, cochenille: 0, secu: 1.02, tampon: Core.TAMPON_DEFAUT, pseudo: '', xpUnits: ['T'], onglet: 'accueil', joueurs: {} };
   // Stockage Tampermonkey : hors de portée des scripts du site (contrairement au localStorage de fourmizzz.fr)
   const GM = typeof GM_getValue === 'function' && typeof GM_setValue === 'function';
   const loadCfg = () => {
@@ -749,8 +759,10 @@ window.SIMUOPTI_LITE = true;
   if (!cfg.tamponV2) { if (cfg.tampon == null || cfg.tampon === 5) cfg.tampon = Core.TAMPON_DEFAUT; cfg.tamponV2 = true; saveCfg(cfg); }
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-  const fmt = (n) => (n == null || !isFinite(n) ? '—' : Math.round(n).toLocaleString('fr-FR'));
-  const fmtUp = (n) => (n == null || !isFinite(n) ? '—' : Math.ceil(n - 1e-6).toLocaleString('fr-FR'));
+  // séparateur de milliers : espace insécable normale (l'espace fine du français se lit mal entre les chiffres)
+  const milliers = (n) => n.toLocaleString('fr-FR').replace(/[  ]/g, ' ');
+  const fmt = (n) => (n == null || !isFinite(n) ? '—' : milliers(Math.round(n)));
+  const fmtUp = (n) => (n == null || !isFinite(n) ? '—' : milliers(Math.ceil(n - 1e-6) || 0));
   const f2 = (n) => (n == null || !isFinite(n) ? '—' : n.toFixed(2).replace('.', ','));
   const LIEU = { dome: 'Dôme', loge: 'Loge', terrain: 'TDC' };
   // thèmes : code, nom, couleur de la pastille (l'accent du thème)
@@ -767,6 +779,10 @@ window.SIMUOPTI_LITE = true;
    * Le joueur actif (barre « Fiche », onglet Joueurs, ou le dernier joueur travaillé) remplit les autres onglets :
    * défenseur du simulateur et champs de l'onglet VA & TdP. */
   const NIVEAUX = ['armes', 'bouclier', 'dome', 'loge'];
+  // conseil en deux tours affiché seulement si ses évolutions rapportent au moins 5 % de vie + att + déf en plus
+  const SEUIL_DEUX_TOURS = 0.05;
+  /** Armée la plus récente connue d'un joueur : défense vue dans un RC, ou armée enregistrée (saisie ou site). */
+  const armeeFiche = (j) => [j.defense, j.armee].filter(Boolean).sort((a, b) => (b.t || 0) - (a.t || 0))[0] || null;
   /** Enregistre des niveaux { armes: { v, sup } … } : un niveau supposé n'écrase jamais un niveau calculé. */
   function noterNiveaux(nom, niv, t) {
     const j = joueur(nom);
@@ -783,7 +799,7 @@ window.SIMUOPTI_LITE = true;
   }
   function noterVa(nom, va, src) { const j = joueur(nom); j.va = va; j.vaSrc = src; j.maj = Date.now(); saveCfg(cfg); }
   // une VA estimée ne remplace jamais une VA exacte, mesurée ou saisie
-  const RANG_VA = { exacte: 3, mesuree: 2, depart: 2, saisie: 2, estimee: 1 };
+  const RANG_VA = { exacte: 3, mesuree: 2, depart: 2, saisie: 2, site: 2, estimee: 1 };
   const vaPlusSure = (j, src) => !j || j.va == null || (RANG_VA[src] || 0) >= (RANG_VA[j.vaSrc] || 0);
   const ficheDe = (nom) => (nom ? cfg.joueurs[String(nom).toLowerCase()] || null : null);
   const nivTxt = (j, k) => (j[k] == null ? '?' : j[k] + (j.sup && j.sup[k] ? '?' : ''));
@@ -812,6 +828,7 @@ window.SIMUOPTI_LITE = true;
     if (!sauf.includes('sim')) remplirSimFiche(j);
     if (!sauf.includes('va') && ui.remplirVa) ui.remplirVa(j);
     majFiches();
+    if (ui.siteFiche) ui.siteFiche(j.nom); // appli à code : complète la fiche avec le site (rien dans la version web)
   }
   /** Aucun joueur actif : vide ses niveaux dans les autres onglets (les fiches restent dans l'onglet Joueurs). */
   function aucuneFiche() {
@@ -823,10 +840,11 @@ window.SIMUOPTI_LITE = true;
     if (ui.rcTa && ui.rcTa.value.trim()) render(ui.rcTa.value, ui.rcOut);
     majFiches();
   }
-  /** Défenseur du simulateur d'après la fiche : dernière défense vue chez lui, ses niveaux (inconnus = 0). */
+  /** Défenseur du simulateur d'après la fiche : armée la plus récente connue, ses niveaux (inconnus = 0). */
   function remplirSimFiche(j) {
     const s = lireSim();
-    remplirSim({ def: j.defense ? j.defense.armee : {}, tech: { dB: j.bouclier ?? 0, dA: j.armes ?? 0, dC: 0 },
+    const a = armeeFiche(j);
+    remplirSim({ def: a ? a.armee : {}, tech: { dB: j.bouclier ?? 0, dA: j.armes ?? 0, dC: 0 },
       lieu: { type: s.lieu.type, dome: j.dome ?? 0, loge: j.loge ?? 0 }, nom: j.nom });
   }
   /** Barre « Fiche », info du simulateur et onglet Joueurs. */
@@ -947,6 +965,82 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .b.alt{background:var(--carte2);color:var(--texte);border:1px solid var(--ligne2)}
   #simuopti-ui .b.mini{padding:3px 9px;font-size:12px;border-radius:6px}
   /* ---- Cartes ---- */
+  #simuopti-ui .ac-tete{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 12px;margin-bottom:8px}
+  #simuopti-ui .ac-tete h4{margin:0}
+  #simuopti-ui .ac-deux{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+  #simuopti-ui .ac-deux label{display:flex;flex-direction:column;align-items:stretch;gap:6px;text-align:left}
+  #simuopti-ui .ac-deux textarea{min-height:150px;border-style:dashed}
+  #simuopti-ui .ac-lib{display:flex;align-items:center;justify-content:flex-start;gap:7px;font-weight:700;width:100%}
+  #simuopti-ui .ac-rc2{display:flex;flex-direction:column;gap:6px;min-width:0}
+  #simuopti-ui .ac-rc2btn{min-height:30px;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:700;text-align:left;cursor:pointer}
+  #simuopti-ui .ac-rc2btn .chev{margin-left:auto;color:var(--mut);transition:transform .15s;transform:rotate(180deg)}
+  #simuopti-ui .rc2-replie .ac-rc2btn .chev{transform:none}
+  #simuopti-ui .ac-deux.rc2-replie{grid-template-columns:minmax(0,1fr)}
+  #simuopti-ui .ac-deux.rc2-replie .ac-rc2 textarea{display:none}
+  #simuopti-ui .ac-deux.rc2-replie .ac-rc2btn{min-height:44px;padding:0 12px;border:1px dashed var(--ligne);border-radius:10px}
+  #simuopti-ui .pastille-n{display:inline-flex;width:22px;height:22px;border-radius:50%;border:1px solid var(--or);color:var(--or);align-items:center;justify-content:center;font-size:12px}
+  #simuopti-ui .pastille-n.plein{background:var(--or);color:var(--sur)}
+  #simuopti-ui .ac-res{border-color:var(--or)}
+  #simuopti-ui .or{color:var(--or)}
+  #simuopti-ui .ac-armee{border:2px solid var(--or);border-radius:12px;padding:12px 14px;background:var(--carte2);display:flex;flex-direction:column;gap:10px;margin:10px 0 2px}
+  #simuopti-ui .ac-armee-tete{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px}
+  #simuopti-ui .ac-armee-tete span{font-size:15px;font-weight:800;color:var(--or);text-transform:uppercase;letter-spacing:.5px}
+  #simuopti-ui .ac-armee-tete small{color:var(--mut);font-size:12px}
+  #simuopti-ui .ac-lignes{display:flex;flex-direction:column;gap:3px}
+  #simuopti-ui .ac-ligne{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+  #simuopti-ui .ac-ligne b{font-size:28px;line-height:1.15;font-weight:900;color:var(--fort);font-variant-numeric:tabular-nums}
+  #simuopti-ui .ac-ligne span{font-size:15px}
+  #simuopti-ui .ac-net{font-size:13px}
+  #simuopti-ui .ac-nets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  #simuopti-ui .ac-nets>div{background:var(--champ);border-radius:9px;padding:7px 9px;display:flex;flex-direction:column;gap:1px;min-width:0}
+  #simuopti-ui .ac-nets small{color:var(--mut);font-size:11.5px}
+  #simuopti-ui .ac-nets b{font-size:14px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+  #simuopti-ui .gain-net{font-size:13px;margin-top:4px}
+  #simuopti-ui .ac-boutons{display:flex;flex-wrap:wrap;gap:8px}
+  #simuopti-ui .ac-boutons .b{flex:1 1 220px}
+  #simuopti-ui .tuiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:4px 0 10px}
+  #simuopti-ui .tuile{background:var(--champ);border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:2px;min-width:0}
+  #simuopti-ui .tuile small{color:var(--mut);font-size:11.5px}
+  #simuopti-ui .tuile b{font-size:15px;overflow-wrap:anywhere}
+  #simuopti-ui .connecte{font-size:12.5px;font-weight:700}
+  #simuopti-ui .ac-traque input[data-trq]{flex:1 1 200px;min-width:0}
+  #simuopti-ui .ac-traque table{margin-top:8px}
+  #simuopti-ui .ac-reglages{margin-top:14px}
+  #simuopti-ui .reglages-cartes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;align-items:stretch}
+  #simuopti-ui .reglages-cartes .rcarte{border:1px solid var(--ligne);border-radius:12px;padding:12px 14px;margin:0;background:var(--carte);display:flex;flex-direction:column;gap:8px;min-width:0}
+  #simuopti-ui .reglages-cartes .rtete{min-height:22px}
+  #simuopti-ui .reglages-cartes .sert{margin-top:auto;padding-top:2px}
+  #simuopti-ui .reglages-cartes .armybox textarea{flex:1 1 90px;min-height:90px;margin:0;width:100%;box-sizing:border-box}
+  #simuopti-ui .reglages-cartes .armybox [data-armyread]{margin:0;width:100%}
+  #simuopti-ui .reglages-cartes .armybox [data-armyread]:empty{display:none}
+  #simuopti-ui .reglages-cartes details.aide{margin-top:0}
+  #simuopti-ui .rtete{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%}
+  #simuopti-ui .rtete h4{margin:0}
+  #simuopti-ui .rgrille{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px}
+  #simuopti-ui .rgrille label,#simuopti-ui .rcarte .pseudo{display:flex;flex-direction:column;align-items:stretch;gap:3px;font-size:12px;color:var(--mut);text-align:left}
+  #simuopti-ui .rgrille input,#simuopti-ui .rcarte .pseudo input{width:100%!important;box-sizing:border-box}
+  #simuopti-ui .ponte-ligne{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+  #simuopti-ui .pontenb{font-size:12.5px}
+  #simuopti-ui .sert{font-size:11.5px;color:var(--mut)}
+  #simuopti-ui .etat{font-size:12px}
+  #simuopti-ui details.rcarte>summary{list-style:none;cursor:pointer}
+  #simuopti-ui details.rcarte>summary::-webkit-details-marker{display:none}
+  #simuopti-ui .renvoi{margin:4px 2px 8px}
+  #simuopti-ui .ac-regbtn{display:none}
+  @media (max-width:520px){
+    #simuopti-ui .ac-reglages>.ac-tete{display:none}
+    #simuopti-ui .ac-regbtn{display:flex;width:100%;min-height:56px;box-sizing:border-box;align-items:center;justify-content:space-between;gap:10px;text-align:left;margin-bottom:8px;padding:9px 14px;border:1px solid var(--ligne);border-radius:12px;background:var(--carte);color:var(--or);font:inherit;cursor:pointer}
+    #simuopti-ui .ac-regtxt{display:flex;flex-direction:column;gap:2px;min-width:0}
+    #simuopti-ui .ac-regbtn .chev{color:var(--mut);transition:transform .15s}
+    #simuopti-ui .ac-reglages:not(.replie) .ac-regbtn .chev,#simuopti-ui .ac-traque-bloc:not(.replie) .ac-regbtn .chev{transform:rotate(180deg)}
+    #simuopti-ui .ac-traque-bloc{margin-top:10px}
+    #simuopti-ui .ac-traque .ac-tete h4{display:none}
+    #simuopti-ui .ac-traque-bloc .ac-traque{margin-top:0}
+    #simuopti-ui .ac-traque-bloc.replie .ac-traque{display:none}
+    #simuopti-ui .ac-traque-bloc.replie .ac-regbtn{margin-bottom:0}
+    #simuopti-ui .ac-reglages.replie [data-acplace]{display:none}
+    #simuopti-ui .ac-reglages.replie .ac-regbtn{margin-bottom:0}
+  }
   #simuopti-ui .card{border:1px solid var(--ligne);border-radius:12px;padding:12px 14px;margin:10px 0;background:var(--carte)}
   #simuopti-ui h4{margin:0 0 6px;color:var(--or);font-size:14px;font-weight:800}
   #simuopti-ui .card>h4:first-child{display:flex;align-items:center;gap:6px}
@@ -1084,6 +1178,17 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .sim .msg b{font-weight:800;color:var(--fort)}
   #simuopti-ui .sim .act{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px}
   #simuopti-ui .sim .colle{cursor:pointer;font:600 11px system-ui,sans-serif;vertical-align:middle;background:transparent;color:var(--mut);border:1px solid var(--ligne2);border-radius:6px;padding:2px 6px}
+  #simuopti-ui .sim th .tete{white-space:nowrap;display:inline-block;margin:1px 0}
+  #simuopti-ui .sim .armenu-b{cursor:pointer;width:20px;height:20px;padding:0;border-radius:50%;border:1px solid var(--ligne2);background:var(--champ);color:var(--fort);font:700 10px system-ui,sans-serif;vertical-align:middle;line-height:18px}
+  #simuopti-ui .sim .armenu-b.on{background:var(--fort);color:var(--champ)}
+  #simuopti-ui .sim .armenu-b.plein{color:var(--ko);border-color:var(--ko)}
+  #simuopti-ui .sim [data-armrow] td{padding:0 0 6px}
+  #simuopti-ui .sim .armenu .op{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 6px}
+  #simuopti-ui .sim .armenu .liste{max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+  #simuopti-ui .sim .armenu .liste button{display:flex;justify-content:space-between;gap:8px;text-align:left;background:transparent;color:var(--texte);border:0;border-radius:6px;padding:5px 7px;font:13px system-ui,sans-serif;cursor:pointer}
+  #simuopti-ui .sim .armenu .liste button:hover{background:var(--champ)}
+  #simuopti-ui .sim .armenu .liste small{color:var(--mut);white-space:nowrap}
+  #simuopti-ui .sim .armenu input{width:100%!important;box-sizing:border-box;margin:2px 0 4px}
   #simuopti-ui .sim .collebox{background:var(--carte2);border:1px solid var(--ligne2);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:13px}
   #simuopti-ui .sim .collebox textarea{display:block;width:100%;box-sizing:border-box;height:80px;margin:4px 0;background:var(--champ);color:var(--texte);border:1px solid var(--ligne2);border-radius:6px;font:13px system-ui,sans-serif;padding:5px}
   #simuopti-ui .sim .collebox [data-collemsg]{color:var(--ko);margin-top:4px}
@@ -1097,11 +1202,15 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .fi-tab td{vertical-align:middle}
   #simuopti-ui .fi-tab .nomf{font-weight:800;color:var(--or);cursor:pointer}
   #simuopti-ui .fi-edit input,#simuopti-ui .fi-edit select{width:100%!important;box-sizing:border-box}
+  #simuopti-ui .fi-armee{margin-top:10px;padding-top:8px;border-top:1px solid var(--ligne2);display:flex;flex-direction:column;gap:4px}
+  #simuopti-ui .fi-armee textarea{width:100%;box-sizing:border-box;min-height:54px}
   #simuopti-ui [data-simfiche]{font:13px system-ui,sans-serif;color:var(--texte);margin:0 0 8px}
   #simuopti-ui [data-simfiche]:not(:empty){background:var(--carte2);border:1px solid var(--ligne2);border-radius:8px;padding:6px 10px}
   /* ---- VA & TdP ---- */
   #simuopti-ui .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 12px}
-  #simuopti-ui .grid2 label{flex-direction:column;align-items:stretch;gap:3px}
+  #simuopti-ui .grid2 label{flex-direction:column;align-items:stretch;justify-content:flex-start;gap:3px}
+  #simuopti-ui .cibles .grid2 label{white-space:nowrap}
+  #simuopti-ui .cibles .grid2 label > *{white-space:normal}
   #simuopti-ui .grid2 input,#simuopti-ui .grid2 select{width:100%!important;box-sizing:border-box}
   #simuopti-ui .depart-card{border-color:var(--bronze2)}
   #simuopti-ui .depart-card .va-res{font-size:22px}
@@ -1134,9 +1243,9 @@ window.SIMUOPTI_LITE = true;
   const basculer = () => (estOuvert() ? fermer() : ouvrir());
 
   function init() {
-    const onglets = [['rc', '📜', 'Analyse RC', 'RC'], ['va', '🐜', 'VA &amp; TdP', 'VA·TdP'], ['fiches', '📇', 'Joueurs', 'Joueurs']];
+    const onglets = [['accueil', '🏠', 'Accueil', 'Accueil'], ['rc', '📜', 'Analyse RC', 'RC'], ['va', '🐜', 'VA &amp; TdP', 'VA·TdP'], ['fiches', '📇', 'Joueurs', 'Joueurs']];
     let sectionSim = '';
-    onglets.splice(1, 0, ['sim', '⚔️', 'Simulateur', 'Simu']); sectionSim = `<section class="vue" data-vue="sim">${vueSim()}</section>`;
+    onglets.splice(2, 0, ['sim', '⚔️', 'Simulateur', 'Simu']); sectionSim = `<section class="vue" data-vue="sim">${vueSim()}</section>`;
     const st = document.createElement('style'); st.textContent = css; racine.appendChild(st);
     const btn = el('<button id="simuopti-ui-btn" type="button">⚔️ SimuOpti</button>');
     panel = el(`<div id="simuopti-ui">
@@ -1148,6 +1257,7 @@ window.SIMUOPTI_LITE = true;
       <div class="fbar" title="Joueur actif : sa fiche remplit les autres onglets"><span class="lib">📇 Joueur actif</span><input type="text" data-fiche list="simuopti-fiches" placeholder="Choisir un joueur…" autocomplete="off"><datalist id="simuopti-fiches"></datalist><button type="button" class="aucun" data-aucun title="Aucun joueur : vide ses niveaux dans tous les onglets">✕ Aucun</button><span class="mut" data-fres></span></div>
       <nav>${onglets.map(([k, i, l, c]) => `<button type="button" data-tab="${k}"><span class="ico">${i}</span><span class="long">${l}</span><span class="court">${c}</span></button>`).join('')}</nav>
       <div class="body">
+        <section class="vue" data-vue="accueil">${vueAccueil()}</section>
         <section class="vue" data-vue="rc">${vueRc()}</section>
         ${sectionSim}
         <section class="vue" data-vue="va">${vueVa()}</section>
@@ -1169,14 +1279,15 @@ window.SIMUOPTI_LITE = true;
     if (APP) panel.classList.add('app', 'open'); else fenetre();
     initRc();
     initSim();
-    initVa(); initFiches();
-    onglet(cfg.onglet || 'rc');
+    initVa(); initFiches(); initAccueil();
+    // après une mise à jour, on ouvre sur l'accueil (le tuto n'a pas encore été vu pour cette version)
+    onglet(cfg.tutoVu !== VERSION ? 'accueil' : cfg.onglet || 'accueil');
   }
   /** Tuto (bouton « ? ») : ouvert tout seul à la première ouverture après une mise à jour. */
   function vueTuto() {
     const etapes = [
-      ['Analyse RC', 'Dans le jeu, « Copier le rapport », puis colle-le ici et touche <b>Analyser</b>. Tu obtiens ses niveaux et l’armée conseillée, à copier en un geste.'],
-      ['Réglages de l’envoi', 'Renseigne une fois tes armes, ton bouclier et ta cochenille, puis coche les unités à faire évoluer. La sécurité et la marge tampon te protègent si le RC date un peu.'],
+      ['Accueil', 'Dans le jeu, « Copier le rapport », puis colle-le en RC 1 et touche <b>Analyser</b>. Tu obtiens l’armée conseillée, en 1 ou 2 tours selon le meilleur gain net, à copier ou à envoyer au simulateur. Le détail est dans l’onglet RC.'],
+      ['Mes réglages', 'Sur l’accueil, renseigne une fois tes armes, ton bouclier et ta cochenille, puis coche les unités à faire évoluer. La sécurité et la marge tampon te protègent si le RC date un peu.'],
       ['Réplique ÷10', 'L’armée conseillée frappe au moins 3 fois la vie brute de ses défenseurs : sa réplique est alors divisée par 10 (écrasante victoire).'],
       ['Simulateur', '« Tester dans le simulateur » y envoie l’armée conseillée ; Fight ! rejoue le combat comme le jeu.'],
       ['VA &amp; TdP', `Mesure sa vitesse d’attaque sur un trajet vu${CODE ? ' ou d’après ses attaques (avec ton code)' : ''}, ses temps de trajet, sa TdP et l’heure de départ de son armée.`],
@@ -1190,7 +1301,7 @@ window.SIMUOPTI_LITE = true;
       <div class="tuto-sonde"><h3>Important</h3>
         <p>Pour une meilleure expérience, envoie <b>deux sondes</b> sur ta cible, avec <b>au moins une minute d’écart</b>, avant de simuler.</p>
         <p>Avec ces deux RC, SimuOpti mesure sa ponte et en déduit sa TdP. Il ajoute alors à l’armée conseillée ce qu’il a pondu depuis ton RC, et peut dater le départ de son armée.</p>
-        <ol><li>Onglet <b>VA &amp; TdP › TdP &amp; départ</b> : colle le 1er RC, puis le 2e.</li><li><b>Calculer</b> : sa TdP est enregistrée dans sa fiche.</li><li>Onglet <b>RC</b> : colle le dernier RC, la ponte est comptée.</li></ol></div>
+        <ol><li><b>Accueil</b> : colle le 1er RC, puis le 2e (ouvre RC 2 avec sa flèche).</li><li><b>Analyser</b> : sa TdP est enregistrée dans sa fiche.</li><li>Sa ponte est comptée : le nombre s’affiche à côté de la case « Compter sa ponte ».</li></ol></div>
       ${etapes.map(([t, x], i) => `<div class="tuto-etape"><span class="num">${i + 1}</span><div><b>${t}</b><p>${x}</p></div></div>`).join('')}
       <div class="mut tuto-fin">⚠️ Les résultats sont des estimations : vérifie toujours avec le simulateur avant d’attaquer.</div>
       <button type="button" class="b grand" data-tutofin>J’ai compris</button>
@@ -1262,6 +1373,139 @@ window.SIMUOPTI_LITE = true;
     panel.classList.toggle('large', id === 'sim' && !cfg.fenTaille);
   }
 
+  /* ============================ Accueil ============================
+   * Deux RC côte à côte : avec un seul, l'analyse ; avec deux du même joueur, aussi sa TdP et son départ.
+   * Dessous : armée conseillée bien visible, résumé, traque (appli à code), puis « Mes réglages ». */
+  function vueAccueil() {
+    return `<div class="card accueil-rc">
+        <div class="ac-tete"><h4>Colle tes rapports de combat</h4><span class="mut">Un seul RC suffit. Avec deux RC du même joueur (au moins 1 min d’écart), SimuOpti mesure aussi sa ponte et l’heure de départ.</span></div>
+        <div class="ac-deux" data-acdeux>
+          <label><span class="ac-lib"><span class="pastille-n plein">1</span>RC 1 <span class="mut">sonde ou attaque</span></span><textarea data-ac="rc1" placeholder="Colle ici le premier rapport : « Copier le rapport » dans le jeu, puis colle."></textarea></label>
+          <div class="ac-rc2"><button type="button" class="ac-lib ac-rc2btn" data-acrc2btn aria-expanded="false"><span class="pastille-n">2</span>RC 2 <span class="mut" data-acrc2etat>facultatif · au moins 1 min après</span><span class="chev">▼</span></button><textarea data-ac="rc2" aria-label="RC 2, facultatif" placeholder="Colle ici le second rapport sur le même joueur."></textarea></div>
+        </div>
+        <div class="row"><button class="b grand" type="button" data-acgo>🔍 Analyser</button><button class="b alt" type="button" data-acvide>✖ Vider</button></div>
+      </div>
+      <div class="ac-reglages"><div class="ac-tete"><h4>Mes réglages</h4><span class="mut">À remplir une fois : ils servent à tous les onglets.</span></div>
+        <button type="button" class="ac-regbtn" data-acregbtn aria-expanded="true"><span class="ac-regtxt"><b>Mes réglages</b><span class="mut" data-acregres></span></span><span class="chev">▼</span></button>
+        <div data-acplace></div></div>
+      <div data-actraque></div>
+      <div data-acres></div>`;
+  }
+  function initAccueil() {
+    const v = panel.querySelector('[data-vue="accueil"]');
+    const q = (x) => v.querySelector(x);
+    const t1 = q('[data-ac=rc1]'), t2 = q('[data-ac=rc2]'), res = q('[data-acres]');
+    const va = panel.querySelector('[data-vue="va"]');
+    // les réglages vivent ici désormais
+    ui.reglagesHome = q('[data-acplace]'); ui.reglagesHome.appendChild(ui.reglages);
+    const etat = () => {
+      const e = ui.reglages.querySelector('[data-etat=moi]'), ok = cfg.armes > 0 && cfg.bouclier > 0;
+      e.textContent = ok ? 'complet' : 'à remplir'; e.className = 'etat ' + (ok ? 'ok' : 'warn');
+    };
+    ui.reglages.addEventListener('change', etat); etat();
+    // sur téléphone, les réglages se replient sur une ligne résumée (ouverts tant qu'ils ne sont pas remplis)
+    const blocReg = q('.ac-reglages'), btnReg = q('[data-acregbtn]');
+    const resumeReg = () => { q('[data-acregres]').textContent = `Armes ${cfg.armes || 0} · Bouclier ${cfg.bouclier || 0} · Cochenilles ${cfg.cochenille || 0}`; };
+    const plier = (ouvert) => { blocReg.classList.toggle('replie', !ouvert); btnReg.setAttribute('aria-expanded', ouvert); };
+    ui.reglages.addEventListener('change', resumeReg); resumeReg();
+    plier(cfg.acRegOuvert ?? !(cfg.armes > 0 && cfg.bouclier > 0));
+    btnReg.onclick = () => { const ouvert = blocReg.classList.contains('replie'); cfg.acRegOuvert = ouvert; saveCfg(cfg); plier(ouvert); };
+    t1.value = cfg.acRc1 || ''; t2.value = cfg.acRc2 || '';
+    const garder = () => { cfg.acRc1 = t1.value; cfg.acRc2 = t2.value; saveCfg(cfg); };
+    t1.addEventListener('input', garder); t2.addEventListener('input', garder);
+    // RC 2 facultatif : réduit par défaut quand il est vide ; un RC collé reste pris en compte même réduit
+    const blocDeux = q('[data-acdeux]'), btnRc2 = q('[data-acrc2btn]'), etatRc2 = q('[data-acrc2etat]');
+    const majRc2 = () => { etatRc2.textContent = blocDeux.classList.contains('rc2-replie') && t2.value.trim() ? 'rapport collé · sera analysé' : 'facultatif · au moins 1 min après'; };
+    const plierRc2 = (ouvert) => { blocDeux.classList.toggle('rc2-replie', !ouvert); btnRc2.setAttribute('aria-expanded', ouvert); majRc2(); };
+    plierRc2(cfg.acRc2Ouvert ?? !!t2.value.trim());
+    btnRc2.onclick = () => { const ouvert = blocDeux.classList.contains('rc2-replie'); cfg.acRc2Ouvert = ouvert; saveCfg(cfg); plierRc2(ouvert); if (ouvert) t2.focus(); };
+    t2.addEventListener('input', majRc2);
+    const tuile = (lib, val, cls = '') => `<div class="tuile"><small>${lib}</small><b class="${cls}">${val}</b></div>`;
+    // à côté de la case « Compter sa ponte » : ce qui sera ajouté, ou pourquoi rien ne l'est
+    const notePonte = () => {
+      const z = ui.reglages.querySelector('[data-pontenb]'), p = ui.ponteInfo, coche = cfg.ponte !== false;
+      if (!p) { z.textContent = 'Analyse un RC pour voir le nombre.'; z.className = 'pontenb mut'; return; }
+      if (p.inconnue) { z.textContent = 'TdP inconnue : colle deux RC de ce joueur.'; z.className = 'pontenb warn'; return; }
+      if (p.sansDate) { z.textContent = 'Date du RC introuvable.'; z.className = 'pontenb warn'; return; }
+      if (!p.n) { z.textContent = 'RC trop récent : rien à ajouter.'; z.className = 'pontenb mut'; return; }
+      z.innerHTML = `<b>+${fmt(p.n)} ${L(p.unite)}</b> ${coche ? 'ajoutées' : 'non comptées'} : ${Core.dureeTexte(p.depuis)} depuis le RC à ${fmt(p.parH)} ${L(p.unite)}/h (TdP ${p.tdp})`;
+      z.className = 'pontenb ' + (coche ? 'ok' : 'mut');
+    };
+    let actif = false, deuxRc = false;
+    const resume = () => {
+      const o = ui.rcOut, deux = deuxRc;
+      notePonte();
+      if (!o.querySelector('.combat')) { res.innerHTML = `<div class="card"><div class="warn">Aucun combat reconnu dans ce rapport.</div><div class="row"><button class="b alt" type="button" data-acdetail>Voir le détail</button></div></div>`; return; }
+      // armée affichée : la meilleure au bilan net entre 1 tour et 2 tours (troupes illimitées), l'autre juste en dessous
+      const c1 = o.querySelector('.prop[data-cle="0-1"]'), c2 = o.querySelector('.prop[data-cle="0-2"]');
+      const net = (c) => (c ? +c.dataset.net : -Infinity);
+      const prop = c2 && net(c2) > net(c1) ? c2 : c1, autre = prop === c2 ? c1 : c2;
+      const bCopie = prop ? prop.querySelector('[data-copiearmee]') : null, nTours = prop === c2 ? 2 : 1;
+      const vie = o.querySelector('.ligne-vie b');
+      // cible : défenseur du RC analysé (le joueur actif peut être un autre)
+      const a0 = (() => { try { return Core.analyseText(ui.rcTa.value, cfg).analyses[0]; } catch (e) { return null; } })();
+      const dn = a0 && a0.combat.header ? a0.combat.header.def : null, j = dn ? ficheDe(dn) : null;
+      // TdP et départ : fiche du joueur, sinon le résultat de l'onglet VA & TdP (RC sans nom)
+      const tdpVa = deux && va.querySelector('[data-tpres] .va-res') ? (va.querySelector('[data-tpres] .va-res').textContent.match(/TdP \d+/) || [])[0] : null;
+      const depRes = deux && va.querySelector('[data-depart] .va-res') ? va.querySelector('[data-depart] .va-res').textContent : '';
+      const tdpTxt = j && j.tdp != null ? 'TdP ' + j.tdp : tdpVa;
+      const depTxt = /^Parti/.test(depRes) ? depRes.replace(/^Parti\s*/, '') : j && j.depart ? dateCourte(j.depart) : depRes ? 'non datable' : null;
+      const p = ui.ponteInfo, ponteOk = p && p.n > 0 && cfg.ponte !== false;
+      const xp = prop ? prop.querySelector('.badge') : null, titre = prop ? prop.querySelector('h4') : null;
+      const unites = bCopie ? bCopie.dataset.copiearmee.split(', ').map((u) => { const m = u.match(/^([\d\s]+)\s(\D.*)$/); return m ? `<div class="ac-ligne"><b>${esc(m[1].trim())}</b><span>${esc(m[2])}</span></div>` : `<div class="ac-ligne"><span>${esc(u)}</span></div>`; }).join('') : '';
+      const sim = prop ? prop.querySelector('[data-tosim]') : null;
+      const nG = (c) => (+c.dataset.net >= 0 ? '+' : '') + fmt(+c.dataset.net);
+      const netsDe = (c) => { const n = (c.dataset.nets || '0,0,0').split(',').map(Number); return [['❤ Vie', n[0]], ['⚔ Attaque', n[1]], ['🛡️ Défense', n[2]]]; };
+      const armee = bCopie ? `<div class="ac-armee"><div class="ac-armee-tete"><span>Armée conseillée · ${nTours} tour${nTours > 1 ? 's' : ''}</span><small>${titre ? esc(titre.textContent.replace(/^\S+\s/, '').replace(/^Armée conseillée · /, '')) : ''}${xp ? ' · ' + esc(xp.textContent) : ''}</small></div>
+          <div class="ac-lignes">${unites}</div>
+          <div class="ac-boutons"><button class="b grand" type="button" data-accopie>📋 Copier l’armée</button>${sim ? `<button class="b grand" type="button" data-acsim="${sim.dataset.tosim}">⚔️ Envoyer vers le simulateur</button>` : ''}</div>
+          <div class="ac-nets">${netsDe(prop).map(([t, n]) => `<div><small>${t}</small><b class="${n >= 0 ? 'ok' : 'warn'}">${n >= 0 ? '+' : ''}${fmt(n)}</b></div>`).join('')}</div>
+          <div class="ac-net">Gain net total : <b>${nG(prop)}</b>${autre && bCopie ? ` · autre option, ${nTours === 2 ? '1 tour' : '2 tours'} : ${nG(autre)}` : ''}</div>
+          ${sim ? `<div class="mut">Le simulateur reçoit cette armée en attaque contre sa défense du RC${ponteOk ? ` + ${fmt(p.n)} ${L(p.unite)} pondues` : ''}, avec ses niveaux.</div>` : ''}</div>`
+        : '<div class="ac-armee"><div class="ac-armee-tete"><span>Armée conseillée</span></div><div class="mut">Pas d’armée conseillée pour ce rapport : ses armes ou sa vie ne sont pas lisibles. Voir le détail.</div></div>';
+      res.innerHTML = `<div class="card ac-res"><div class="ac-tete"><h4>Cible : <span class="or">${dn ? esc(dn) : 'inconnue (RC sans nom)'}</span></h4>
+        <div class="row"><button class="b alt" type="button" data-acdetail>Voir le détail</button></div></div>
+        <div class="tuiles">${j ? tuile('Ses niveaux', `A ${nivTxt(j, 'armes')} · B ${nivTxt(j, 'bouclier')} · D ${nivTxt(j, 'dome')} · L ${nivTxt(j, 'loge')}`) : ''}
+          ${vie ? tuile('Vie à battre', vie.textContent) : ''}
+          ${tuile('Sa TdP', tdpTxt || (deux ? 'non mesurable' : '2 RC nécessaires'), tdpTxt ? '' : 'mut')}
+          ${tuile('Ponte ajoutée', ponteOk ? `+${fmt(p.n)} ${L(p.unite)}` : cfg.ponte === false ? 'option décochée' : '—', ponteOk ? '' : 'mut')}
+          ${tuile('Départ de son armée', depTxt || '—', depTxt && depTxt !== 'non datable' ? '' : 'mut')}</div>
+        ${armee}</div>`;
+      if (bCopie) res.querySelector('[data-accopie]').onclick = (e) => copier(bCopie.dataset.copiearmee, e.target);
+      if (ui.traqueCible && dn) ui.traqueCible(dn);
+    };
+    // chaque nouvelle analyse (réglage changé, case ponte, armée, fiche complétée) met le résumé à jour
+    ui.apresRender = () => { if (actif) resume(); else notePonte(); };
+    res.addEventListener('click', (e) => {
+      if (e.target.closest('[data-acdetail]')) onglet('rc');
+      if (e.target.closest('[data-acsim]')) { const b = ui.rcOut.querySelector(`[data-tosim="${e.target.closest('[data-acsim]').dataset.acsim}"]`); if (b) b.click(); }
+    });
+    q('[data-acgo]').onclick = () => {
+      garder();
+      const a = t1.value.trim(), b = t2.value.trim();
+      if (!a && !b) { actif = false; res.innerHTML = '<div class="card warn">Colle au moins un rapport de combat.</div>'; return; }
+      deuxRc = !!(a && b);
+      ui.rcTa.value = deuxRc ? t2.value : a ? t1.value : t2.value;
+      cfg.rapport = ui.rcTa.value; saveCfg(cfg);
+      if (deuxRc) {
+        // TdP et départ d'après les deux RC (onglet VA & TdP), avant l'analyse pour que la ponte soit comptée
+        const r1 = va.querySelector('[data-tp=rc1]'), r2 = va.querySelector('[data-tp=rc2]');
+        r1.value = t1.value; r2.value = t2.value;
+        r1.dispatchEvent(new Event('input', { bubbles: true })); r2.dispatchEvent(new Event('input', { bubbles: true }));
+        va.querySelector('[data-tprc]').click();
+      }
+      actif = true;
+      render(ui.rcTa.value, ui.rcOut, { choisir: true });
+      // le résultat est en bas de page : on y descend, une fois la traque affichée au-dessus
+      setTimeout(() => { if (actif) res.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 400);
+    };
+    q('[data-acvide]').onclick = () => { t1.value = ''; t2.value = ''; garder(); majRc2(); actif = false; res.innerHTML = ''; };
+    panel.querySelector('[data-versaccueil]').onclick = (e) => { e.preventDefault(); onglet('accueil'); };
+    if (ui.initTraque) ui.initTraque(q('[data-actraque]'));
+    deuxRc = !!(t1.value.trim() && t2.value.trim());
+    if (cfg.rapport && (t1.value.trim() || t2.value.trim())) { actif = true; resume(); } else notePonte();
+  }
+
   /* ============================ Onglet Analyse RC ============================ */
   function vueRc() {
     return `
@@ -1276,34 +1520,35 @@ window.SIMUOPTI_LITE = true;
         </div>
       </div>
       <div data-reglages-place></div>
+      <div class="mut renvoi">⚙️ Tes réglages (niveaux, unités à faire évoluer, ton armée) sont sur l’<a href="#" data-versaccueil>Accueil</a>.</div>
       <div data-out></div>`;
   }
   /** Réglages de l'envoi : un seul bloc, placé dans le résultat entre la lecture du RC et les propositions. */
   function vueReglages() {
-    return `<div class="card reglages" data-reglages>
-        <h4>⚙️ Réglages de l’envoi</h4>
-        <div class="sous">Mes niveaux</div>
-        <div class="niveaux">
-          <label>Armes <input type="number" min="0" max="60" data-k="armes"></label>
-          <label>Bouclier <input type="number" min="0" max="60" data-k="bouclier"></label>
-          <label>Cochenille <input type="number" min="0" max="60" data-k="cochenille"></label>
-          <label title="Vie à battre × ce coefficient, par prudence">Sécurité <input type="number" min="1" max="2" step="0.01" data-k="secu"></label>
-        </div>
-        <div class="explic">ⓘ <b>Sécurité</b> : augmente ta frappe pour couvrir sa ponte depuis le RC : sans elle, tu risques de ne pas le tuer au 1er tour. 1,02 = +2 % ; monte-la si le RC est ancien.
-          <details class="aide"><summary>Pourquoi ?</summary><div>La sécurité multiplie la vie de l’adversaire à battre, donc le nombre de tes unités qui frappent. Elle décide si tu passes en un tour, avec la réplique ÷10 de l’écrasante victoire. La marge tampon, elle, ne protège que tes unités de sa réplique. Exemple : s’il a grossi de 10 % depuis le RC, une marge tampon de 20 % encaisse bien sa réplique, mais une sécurité de 1,02 ne suffit plus pour le tuer au 1er tour : monte alors les deux (par exemple 1,10 et 30 %).</div></details></div>
+    const champ = (k, t, attrs) => `<label>${t}<input type="number" ${attrs} data-k="${k}"></label>`;
+    return `<div class="reglages-cartes" data-reglages>
+      <div class="rcarte">
+        <div class="rtete"><h4>Moi</h4><span class="etat" data-etat="moi"></span></div>
         <label class="pseudo">Mon pseudo <input type="text" data-k="pseudo" placeholder="pour reconnaître mes rapports"></label>
+        <div class="rgrille">${champ('armes', 'Armes', 'min="0" max="60"')}${champ('bouclier', 'Bouclier', 'min="0" max="60"')}${champ('cochenille', 'Cochenilles', 'min="0" max="60"')}</div>
+        <div class="sert">Sert à : Analyse RC, Simulateur</div>
+      </div>
+      <div class="rcarte">
+        <div class="rtete"><h4>Mes envois</h4></div>
         <div class="sous">Unités à faire évoluer</div>
         <div class="xpsel">${Object.keys(Core.EVOL).map((u) => `<label class="chip"><input type="checkbox" data-xp="${u}">${L(u)}</label>`).join('')}</div>
-        <div class="tampon"><label title="JSN ajoutées au minimum pour encaisser la réplique si l’adversaire a pondu depuis le RC">🛡️ Marge tampon JSN <input type="number" min="0" max="500" step="5" data-k="tampon"> %</label>
-          <div class="explic">ⓘ Ajoute des JSN pour encaisser sa réplique : sans elles, ce sont tes unités qui frappent qui meurent. 20 % par défaut ; monte-la si le RC est ancien.</div>
-          <details class="aide"><summary>Pourquoi ?</summary><div>Les JSN partent en tête de ton armée : la réplique du défenseur tue les unités dans l’ordre de l’armée, donc ce sont elles qui meurent à la place des unités qui frappent et qui évoluent. Le minimum est calculé sur l’armée vue dans le RC. Mais entre le RC et l’arrivée de ton attaque, l’adversaire continue de pondre : sa réplique grandit, et sans marge ce sont tes autres unités qui meurent et n’évoluent pas. La marge ajoute ce pourcentage de JSN au minimum (20 % par défaut). Augmente-la si le RC est ancien ou si l’adversaire pond vite (voir sa TdP dans l’onglet VA &amp; TdP), baisse-la si le RC vient d’être pris. Elle ne touche pas la vie à battre : si sa ponte est forte, refais un RC récent avant d’attaquer.</div></details></div>
-        <label class="case ponte"><input type="checkbox" data-ponte> 🥚 Compter sa ponte depuis l’heure du RC</label>
-        <div class="explic">ⓘ Ajoute à sa défense ce qu’il a pondu entre le RC et maintenant, d’après la TdP et l’unité pondue de sa fiche (calculées dans VA &amp; TdP avec deux RC).</div>
-        <details data-armybox class="armybox"><summary><span class="ico">🐜</span><span>Mon armée <span class="mut">— pour l’envoi depuis mes troupes</span></span><span class="badge" data-armybadge>vide</span><span class="chev">▼</span></summary>
-          <textarea data-army style="height:80px;margin-top:4px" placeholder="Colle ton armée disponible : « Copier l'armée » d'un rapport, ou la liste de la page Armée (une unité par ligne)…"></textarea>
-          <div class="mut" data-armyread></div>
-        </details>
-      </div>`;
+        <div class="rgrille">${champ('secu', 'Sécurité', 'min="1" max="2" step="0.01" title="Vie à battre × ce coefficient, par prudence"')}${champ('tampon', 'Marge JSN %', 'min="0" max="500" step="5" title="JSN ajoutées pour encaisser sa réplique"')}</div>
+        <div class="ponte-ligne"><label class="case ponte"><input type="checkbox" data-ponte> Compter sa ponte depuis l’heure du RC</label><span class="pontenb mut" data-pontenb></span></div>
+        <details class="aide"><summary>À quoi servent sécurité et marge ?</summary><div><b>Sécurité</b> : multiplie la vie à battre, pour le tuer au 1er tour même s’il a pondu depuis le RC (1,02 = +2 %). <b>Marge JSN</b> : JSN en plus devant ton armée pour encaisser sa réplique (20 % par défaut). Monte les deux si le RC est ancien.</div></details>
+        <div class="sert">Sert à : Analyse RC, Simulateur</div>
+      </div>
+      <div data-armybox class="rcarte armybox">
+        <div class="rtete"><h4>Mon armée</h4><span class="badge" data-armybadge>vide</span></div>
+        <textarea data-army placeholder="Colle ton armée disponible : « Copier l'armée » d'un rapport, ou la page Armée…"></textarea>
+        <div class="mut" data-armyread></div>
+        <div class="sert">Sert à : « Depuis mes troupes », Simulateur</div>
+      </div>
+    </div>`;
   }
   function initRc() {
     const v = panel.querySelector('[data-vue="rc"]');
@@ -1318,8 +1563,8 @@ window.SIMUOPTI_LITE = true;
     const showArmy = () => {
       const a = Core.parseArmyLoose(taArmy.value);
       armyRead.textContent = a.length ? 'Lu : ' + armyStr(a) : (taArmy.value.trim() ? 'Aucune unité reconnue.' : '');
-      const badge = v.querySelector('[data-armybadge]');
-      badge.textContent = a.length ? `${a.length} type${a.length > 1 ? 's' : ''} d’unités` : 'vide — clique pour remplir';
+      const badge = ui.reglages.querySelector('[data-armybadge]');
+      badge.textContent = a.length ? `${a.length} type${a.length > 1 ? 's' : ''} d’unités` : 'vide';
       badge.classList.toggle('on', a.length > 0);
     };
     taArmy.value = cfg.armee || '';
@@ -1335,7 +1580,7 @@ window.SIMUOPTI_LITE = true;
     if (!Array.isArray(cfg.xpUnits)) cfg.xpUnits = [cfg.unit || 'T'];
     v.querySelectorAll('[data-xp]').forEach((cb) => {
       cb.checked = cfg.xpUnits.includes(cb.dataset.xp);
-      cb.addEventListener('change', () => { cfg.xpUnits = [...v.querySelectorAll('[data-xp]:checked')].map((x) => x.dataset.xp); saveCfg(cfg); rerender(); });
+      cb.addEventListener('change', () => { cfg.xpUnits = [...ui.reglages.querySelectorAll('[data-xp]:checked')].map((x) => x.dataset.xp); saveCfg(cfg); rerender(); });
     });
     v.querySelectorAll('[data-k]').forEach((inp) => {
       inp.value = cfg[inp.dataset.k] ?? '';
@@ -1391,7 +1636,8 @@ window.SIMUOPTI_LITE = true;
   /** Fiches d'après une analyse : niveaux de chaque joueur (sauf moi) et dernière défense vue chez lui. */
   function noterAnalyse(res, text, me) {
     const dateTexte = Core.dateRc(text);
-    const autres = res.players.filter((p) => p.name && !memeNom(p.name, me) && p.name !== 'Moi');
+    // « Simulation » : nom mis par le simulateur quand le défenseur est inconnu, pas un joueur
+    const autres = res.players.filter((p) => p.name && !memeNom(p.name, me) && p.name !== 'Moi' && p.name !== 'Simulation');
     for (const p of autres) {
       const lieu = (pl) => { const r = p.res[pl]; if (!r) return null; if (r.combos.length === 1) return { v: r.combos[0].niveau, b: r.combos[0].bouclier }; return r.hyp ? { v: r.hyp.niveau, b: r.hyp.bouclier, sup: true } : null; };
       const d = lieu('dome'), l = lieu('loge'), b = [d, l].find((x) => x && x.b != null);
@@ -1400,9 +1646,16 @@ window.SIMUOPTI_LITE = true;
     }
     for (const r of res.analyses) {
       const dn = (r.combat.header || {}).def;
-      if (!dn || memeNom(dn, me)) continue;
+      if (!dn || memeNom(dn, me) || dn === 'Simulation') continue;
       const j = joueur(dn), t = r.combat.date || dateTexte || Date.now();
       if (!j.defense || t >= j.defense.t) j.defense = { armee: Object.fromEntries(r.combat.defenders), t };
+      j.maj = Date.now();
+    }
+    for (const r of res.analyses) {
+      const an = (r.combat.header || {}).att;
+      if (!an || memeNom(an, me) || an === 'Simulation') continue;
+      const j = joueur(an), t = r.combat.date || dateTexte || Date.now();
+      if (!j.attaque || t >= j.attaque.t) j.attaque = { armee: Object.fromEntries(r.combat.attackers), t };
       j.maj = Date.now();
     }
     saveCfg(cfg);
@@ -1439,8 +1692,9 @@ window.SIMUOPTI_LITE = true;
 
   function render(text, out, { choisir = false } = {}) {
     rangerReglages();
+    ui.ponteInfo = null;
     const res = Core.analyseText(text, cfg);
-    if (!res.analyses.length) { out.innerHTML = vuePonteSeule(text); return; }
+    if (!res.analyses.length) { out.innerHTML = vuePonteSeule(text); if (ui.apresRender) ui.apresRender(); return; }
     const me = cfg.pseudo || 'Moi';
     const adversaires = noterAnalyse(res, text, me);
     // un seul adversaire dans les rapports : il devient le joueur actif (sa fiche remplit les autres onglets)
@@ -1503,7 +1757,7 @@ window.SIMUOPTI_LITE = true;
       const nbT = r.rounds.length;
       // ponte depuis l'heure du RC, d'après la TdP et l'unité pondue de sa fiche (désactivable dans les réglages)
       let ennemi = r.combat.defenders, ponte = null;
-      if (cfg.ponte !== false && dn !== 'Moi' && !memeNom(dn, me)) {
+      if (dn !== 'Moi' && !memeNom(dn, me)) {
         const fp = ficheDe(dn), tRc = r.combat.date || Core.dateRc(text);
         if (!fp || fp.tdp == null || !fp.unite || !Core.TDP_BASE[fp.unite]) ponte = { inconnue: true };
         else if (!tRc) ponte = { sansDate: true };
@@ -1511,12 +1765,14 @@ window.SIMUOPTI_LITE = true;
           const depuis = Math.max(0, (Date.now() - tRc) / 1000);
           const parH = Core.rythmePonte(fp.tdp, Core.TDP_BASE[fp.unite]) * 3600;
           ponte = { n: Math.floor(parH * depuis / 3600), unite: fp.unite, depuis, parH, tdp: fp.tdp };
-          if (ponte.n > 0) {
+          if (ponte.n > 0 && cfg.ponte !== false) {
             const m = Object.fromEntries(ennemi); m[ponte.unite] = (m[ponte.unite] || 0) + ponte.n;
             ennemi = Object.keys(Core.UNITS).filter((c) => m[c]).map((c) => [c, m[c]]);
           }
         }
       }
+      if (i === 0) ui.ponteInfo = ponte;
+      if (cfg.ponte === false) ponte = null;
       // temps qu'il aurait fallu pour pondre l'armée vue dans ce RC à TdP 0 (secondes par unité : TDP_BASE)
       const ponte0 = r.combat.defenders.reduce((x, [c, n]) => x + (Core.TDP_BASE[c] ? n * Core.TDP_BASE[c] : 0), 0);
       const sansBase = r.combat.defenders.filter(([c, n]) => n > 0 && !Core.TDP_BASE[c]).map(([c]) => L(c));
@@ -1585,7 +1841,6 @@ window.SIMUOPTI_LITE = true;
         html += `<div class="ligne-vie"><span>Vie à battre (×${f2(eMult)}${exactV ? '' : ', plafond'} × sécurité ${f2(res.my.secu || 1.02)})</span><b>${fmt(o0.vieABattre)}</b></div>`;
         html += `<details class="det"><summary>Lecture du RC (tours, armes, bouclier)</summary>${lect}</details>`;
         html += '</div>';
-        if (!reglagesPlaces) { html += '<div data-reglages-slot></div>'; reglagesPlaces = true; }
 
         let simBase = null;
         // pour « Tester dans le simulateur » : ce défenseur avec les niveaux déduits
@@ -1603,11 +1858,19 @@ window.SIMUOPTI_LITE = true;
 
         const evolTot = (o) => o.rows.reduce((x, y) => x + y.evol, 0);
         const jsnPertes = (o) => (o.rows.find((x) => x.c === 'JSN') || { pertes: 0 }).pertes;
+        // vie + attaque + défense gagnées par les unités visées (les JSN ne comptent que si rien d'autre n'est visé)
+        const vise = (c) => c !== 'JSN' || !frappeurs.length;
+        const gainEvol = (o) => o.rows.reduce((x, y) => x + (vise(y.c) ? y.evol * (Core.GAIN[y.c] || 0) : 0), 0);
+        // bilan net : gain des unités visées moins les stats de tout ce qui meurt
+        const statsU = (c) => Core.UNITS[c].vie + Core.UNITS[c].att + Core.UNITS[c].def;
+        const netStat = (o, s) => o.rows.reduce((x, y) => x + (vise(y.c) && y.vers ? y.evol * (Core.UNITS[y.vers][s] - Core.UNITS[y.c][s]) : 0) - y.pertes * Core.UNITS[y.c][s], 0);
+        const signe = (n) => (n >= 0 ? '+' : '') + fmt(n);
+        const bilanNet = (o) => gainEvol(o) - o.rows.reduce((x, y) => x + y.pertes * statsU(y.c), 0);
         // une proposition : tableau, tampon, frappe, alertes, bouton de copie (et envoi au simulateur)
         const carte = (o, titre, { deux = false, avecStock = false, ref = null, cle = '' } = {}) => {
           const enT = deux ? 'en deux tours' : 'en un tour';
           if (!o.passe) return `<div class="card prop"><h4>${titre}</h4><div class="warn">Impossible de le passer ${enT} avec ton armée${o.manqueAtt ? ` : il manque ${fmt(o.manqueAtt * (1 + res.my.armes / 10))} de force de frappe (≈ ${fmt(o.manqueAtt / Core.UNITS.T.att)} Tk)` : ''}.</div></div>`;
-          let hh = `<div class="card prop${deux ? ' deux' : ''}"><div class="tete"><h4>${titre}</h4><span class="badge ${o.pct >= 99.9 ? 'ok' : 'warn'}">XP ${f2(o.pct)} %</span></div>`;
+          let hh = `<div class="card prop${deux ? ' deux' : ''}" data-cle="${cle}" data-net="${o.passe ? Math.round(bilanNet(o)) : 0}" data-nets="${o.passe ? ['vie', 'att', 'def'].map((k) => Math.round(netStat(o, k))).join(',') : ''}"><div class="tete"><h4>${titre}</h4><span class="badge ${o.pct >= 99.9 ? 'ok' : 'warn'}">XP ${f2(o.pct)} %</span></div>`;
           if (deux) hh += '<div class="mut">Sans one-shot, la réplique n’est pas divisée par 10 et plus de JSN meurent, mais deux fois moins de frappe suffit : l’armée est plus légère, donc l’XP plus haute. Surtout rentable contre une défense faible (Tanks, Artilleuses).</div>';
           hh += `<table><tr><th>Unité</th>${avecStock ? '<th>Dispo</th>' : ''}<th>À envoyer</th><th>Pertes</th><th>Évoluent</th></tr>`;
           for (const x of o.rows) hh += `<tr><td>${L(x.c)}</td>${avecStock ? `<td class="mut">${fmt(x.dispo)}</td>` : ''}<td class="big">${fmt(x.envoi)}</td><td>${x.pertes ? fmt(x.pertes) : '—'}</td><td>${x.evol ? `${fmt(x.evol)} → ${L(x.vers)}` : '—'}</td></tr>`;
@@ -1622,20 +1885,24 @@ window.SIMUOPTI_LITE = true;
           if (o.pertesHorsJSN) hh += `<div class="warn">${fmt(o.pertesHorsJSN)} unités autres que des JSN meurent.</div>`;
           if (o.pct < 99.9) hh += `<div class="mut">XP partielle : ce mélange est déjà le plus léger qui passe ${enT} avec ces unités.</div>`;
           if (deux && o.toursEstimes === 1) hh += '<div class="mut">Avec ce mélange il passe finalement en un tour.</div>';
-          if (deux && ref) hh += `<div class="gains"><div class="ok"><small>Évolutions en plus</small><b>+${fmt(evolTot(o) - evolTot(ref))}</b></div><div class="ko"><small>JSN perdues en plus</small><b>+${fmt(o.jsnPerdues - jsnPertes(ref))}</b></div></div>`;
+          if (deux && ref) hh += `<div class="gains"><div class="ok"><small>Évolutions en plus</small><b>+${fmt(evolTot(o) - evolTot(ref))}</b></div><div class="ko"><small>JSN perdues en plus</small><b>+${fmt(o.jsnPerdues - jsnPertes(ref))}</b></div><div class="ok"><small>Vie + att + déf en plus</small><b>+${f2((gainEvol(o) / Math.max(1, gainEvol(ref)) - 1) * 100)} %</b></div></div>`;
+          hh += `<div class="gain-net">Gain net : <b>${signe(netStat(o, 'vie'))}</b> ❤ vie · <b>${signe(netStat(o, 'att'))}</b> ⚔ attaque · <b>${signe(netStat(o, 'def'))}</b> 🛡️ défense</div>`;
           hh += `<div class="boutons"><button class="b grand${deux ? '' : ' contour'}" type="button" data-copiearmee="${esc(texteArmee(o.rows.map((x) => [x.c, x.envoi])))}">📋 Copier l’armée ${deux ? 'en 2 tours' : 'en 1 tour'}${avecStock ? ' (mes troupes)' : ''}</button>`;
           if (simBase) { ui.simPrep[cle] = Object.assign({ att: Object.fromEntries(o.rows.map((x) => [x.c, x.envoi])) }, simBase); hh += `<button class="b alt" type="button" data-tosim="${cle}">⚔️ Tester dans le simulateur</button>`; }
           return hh + '</div></div>';
         };
-        // deux tours : seulement si le one-shot n'atteint pas 100 % d'XP et que plus d'unités évoluent
+        // deux tours : même à 100 % d'XP en un tour, s'il se joue vraiment en deux tours et que les évolutions visées
+        // rapportent au moins SEUIL_DEUX_TOURS de plus qu'en un tour
         const deuxTours = (o1, avail) => {
-          if (!o1.passe || o1.pct >= 99.9) return null;
+          if (!o1.passe) return null;
           const o2 = opt(avail, 2);
-          return o2.passe && evolTot(o2) > evolTot(o1) ? o2 : null;
+          if (!o2.passe || o2.toursEstimes === 1) return null;
+          const plus = gainEvol(o2) - gainEvol(o1);
+          return plus > 0 && plus >= SEUIL_DEUX_TOURS * gainEvol(o1) ? o2 : null;
         };
         html += carte(o0, `🎯 Armée conseillée · 1 tour <span class="mut">(${cibles.map(L).join(' + ')})</span>`, { cle: i + '-1' });
         const o2 = deuxTours(o0, illimite);
-        if (o2) html += carte(o2, '⚔️⚔️ En 2 tours · plus d’XP', { deux: true, ref: o0, cle: i + '-2' });
+        if (o2) html += carte(o2, '⚔️⚔️ En 2 tours · plus d’évolutions', { deux: true, ref: o0, cle: i + '-2' });
         const mine = Core.parseArmyLoose(cfg.armee);
         if (mine.length) {
           const m1 = opt(mine, 1);
@@ -1652,8 +1919,7 @@ window.SIMUOPTI_LITE = true;
     });
     if (!plusieurs) html += blocSynth;
     out.innerHTML = html;
-    const slot = out.querySelector('[data-reglages-slot]');
-    if (slot && ui.reglages) slot.replaceWith(ui.reglages);
+    if (ui.apresRender) ui.apresRender();
   }
 
   const nombreAff = (n) => Math.max(0, Math.floor(n || 0)).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
@@ -1674,7 +1940,8 @@ window.SIMUOPTI_LITE = true;
       <div class="grille">
         <fieldset><legend>Armées <small>: <a data-av class="on">Avant Combat</a> / <a data-ap>Après Combat</a></small></legend>
           <table>
-            <tr><th style="width:34%">Attaquant <button type="button" class="colle" data-coller="att" title="Coller une armée côté attaquant">📋 Coller</button></th><th></th><th class="fl" data-swap title="Échanger les deux armées">‹ ›</th><th></th><th style="width:34%"><button type="button" class="colle" data-coller="def" title="Coller une armée côté défenseur">📋 Coller</button> Défenseur</th></tr>
+            <tr><th style="width:34%"><span class="tete"><button type="button" class="armenu-b" data-armenu="att" aria-label="Troupes de l’attaquant">▼</button> Attaquant</span> <button type="button" class="colle" data-coller="att" title="Coller une armée côté attaquant">📋 Coller</button></th><th></th><th class="fl" data-swap title="Échanger les deux armées">‹ ›</th><th></th><th style="width:34%"><span class="tete">Défenseur <button type="button" class="armenu-b" data-armenu="def" aria-label="Troupes du défenseur">▼</button></span> <button type="button" class="colle" data-coller="def" title="Coller une armée côté défenseur">📋 Coller</button></th></tr>
+            <tr data-armrow hidden><td colspan="5"><div class="collebox armenu" data-armbox hidden></div></td></tr>
             ${lignes}
             <tr class="tot"><td data-tva>0</td><td></td><td class="c">❤ Vie</td><td></td><td data-tvd>0</td></tr>
             <tr class="tot"><td data-tda>0</td><td></td><td class="c">⚔ Dégât</td><td></td><td data-tdd>0</td></tr>
@@ -1758,12 +2025,47 @@ window.SIMUOPTI_LITE = true;
     v.querySelector('[data-tda]').textContent = fmtUp(Core.sumBy(A, 'att') * (1 + s.tech.aA / 10));
     v.querySelector('[data-tvd]').textContent = fmtUp(Core.sumBy(D, 'vie') * mD);
     v.querySelector('[data-tdd]').textContent = fmtUp(Core.sumBy(D, 'def') * (1 + s.tech.dA / 10));
+    // bouton ▼ / ✕ de chaque côté : ▼ met des troupes (menu), ✕ les enlève
+    for (const [c, armee] of [['att', s.att], ['def', s.def]]) {
+      const b = v.querySelector(`[data-armenu="${c}"]`);
+      const plein = Object.values(armee).some((n) => n > 0), qui = c === 'att' ? 'de l’attaquant' : 'du défenseur';
+      b.textContent = plein ? '✕' : '▼'; b.classList.toggle('plein', plein);
+      b.title = plein ? `Enlever les troupes et les niveaux ${qui}` : `Mettre des troupes ${qui} : mon armée ou celle d’un joueur enregistré`;
+    }
   }
   function initSim() {
     const v = panel.querySelector('[data-vue="sim"]');
     const msg = v.querySelector('[data-msg]'), acts = v.querySelector('[data-acts]');
     let avant = null, apres = null, dernier = '', cote = 'att';
     const boite = v.querySelector('[data-collebox]');
+    // boutons ▼ / ✕ : un côté vide → menu (mon armée, ou l'armée d'un joueur enregistré) juste sous les titres ;
+    // un côté rempli → un clic enlève ses troupes et ses niveaux
+    const menu = v.querySelector('[data-armbox]'), ligneMenu = v.querySelector('[data-armrow]');
+    // troupes et niveaux d'un côté (niveaux inconnus = 0) ; le défenseur prend aussi son dôme et sa loge (les miens ne sont pas connus : inchangés)
+    const coteSim = (c, armee, n) => {
+      const x = (k) => n[k] ?? 0;
+      if (c === 'att') return { att: armee, tech: { aB: x('bouclier'), aA: x('armes'), aC: x('cochenille') } };
+      return { def: armee, tech: { dB: x('bouclier'), dA: x('armes'), dC: x('cochenille') }, lieu: n.garderLieu ? undefined : { type: lireSim().lieu.type, dome: x('dome'), loge: x('loge') } };
+    };
+    const fermerMenu = () => { menu.hidden = true; ligneMenu.hidden = true; v.querySelectorAll('[data-armenu]').forEach((b) => b.classList.remove('on')); };
+    const viderCote = (c) => { if (c === 'def') ui.simNom = ''; remplirSim(coteSim(c, {}, {})); v.querySelector('[data-pertes]').hidden = true; };
+    const listerArmees = (filtre) => {
+      const f = filtre.trim().toLowerCase();
+      const lignes = [];
+      for (const j of Object.values(cfg.joueurs)) {
+        if (f && !j.nom.toLowerCase().includes(f)) continue;
+        for (const [k, quoi] of [['armee', 'armée'], ['defense', 'défense'], ['attaque', 'attaque']]) {
+          const vue = j[k];
+          if (!vue || !vue.armee || !Object.values(vue.armee).some((n) => n > 0)) continue;
+          const tot = Object.values(vue.armee).reduce((x, n) => x + n, 0);
+          lignes.push({ t: vue.t || 0, h: `<button type="button" data-armj="${esc(j.nom)}" data-armk="${k}"><span><b>${esc(j.nom)}</b> · ${quoi} · ${fmt(tot)} u.</span><small>${vue.t ? dateCourte(vue.t) : ''}</small></button>` });
+        }
+      }
+      lignes.sort((a, b) => b.t - a.t);
+      menu.querySelector('[data-armliste]').innerHTML = lignes.length ? lignes.map((l) => l.h).join('')
+        : `<div class="mut">${f ? 'Aucun joueur enregistré à ce nom avec une armée connue.' : 'Aucune armée enregistrée : analyse des RC (onglet Analyse RC), ou colle l’armée d’un joueur dans sa fiche (onglet Joueurs).'}</div>`;
+    };
+    menu.addEventListener('input', (e) => { e.stopPropagation(); if (e.target.matches('[data-armcherche]')) listerArmees(e.target.value); });
     v.addEventListener('input', (e) => { if (e.target.matches('input')) { majTotaux(); garderSim(); v.querySelector('[data-pertes]').hidden = true; } });
     v.addEventListener('change', (e) => { if (e.target.matches('input[type=radio]')) { majTotaux(); garderSim(); } });
     v.addEventListener('focusout', (e) => { if (e.target.matches('input.n')) e.target.value = nombreAff(Core.toInt(e.target.value)); });
@@ -1792,6 +2094,34 @@ window.SIMUOPTI_LITE = true;
         try { if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then((x) => { if (x && !ta.value) ta.value = x; }, () => {}); } catch (err) { /* lecture refusée */ }
       }
       if (t.matches('[data-collenon]')) boite.hidden = true;
+      const bm = t.closest('[data-armenu]');
+      if (bm) {
+        const c = bm.dataset.armenu, ouvert = !menu.hidden && menu.dataset.cote === c;
+        if (ouvert) { fermerMenu(); return; }
+        fermerMenu();
+        if (bm.classList.contains('plein')) { viderCote(c); return; }
+        bm.classList.add('on'); menu.dataset.cote = c; menu.hidden = false; ligneMenu.hidden = false;
+        menu.innerHTML = `<b>Mettre des troupes ${c === 'att' ? 'à l’attaquant' : 'au défenseur'}</b>
+          <div class="op"><button type="button" class="colle" data-armmoi>⚔ Mon armée</button><button type="button" class="colle" data-armfin>Fermer</button></div>
+          <input type="text" data-armcherche placeholder="Chercher un joueur…" autocomplete="off">
+          <div class="liste" data-armliste></div>`;
+        listerArmees('');
+        return;
+      }
+      if (t.matches('[data-armfin]')) { fermerMenu(); return; }
+      if (t.matches('[data-armmoi]')) {
+        const a = Core.parseArmyLoose(cfg.armee);
+        if (!a.length) { menu.querySelector('[data-armliste]').innerHTML = '<div class="mut">Ton armée est vide : colle-la dans « Mon armée » (onglet Analyse RC).</div>'; return; }
+        remplirSim(coteSim(menu.dataset.cote, Object.fromEntries(a), { bouclier: cfg.bouclier, armes: cfg.armes, cochenille: cfg.cochenille, garderLieu: true }));
+        v.querySelector('[data-pertes]').hidden = true; fermerMenu(); return;
+      }
+      const ba = t.closest('[data-armj]');
+      if (ba) {
+        const j = ficheDe(ba.dataset.armj), vue = j && j[ba.dataset.armk];
+        if (!vue) return;
+        if (menu.dataset.cote === 'def') ui.simNom = j.nom;
+        remplirSim(coteSim(menu.dataset.cote, vue.armee, j)); v.querySelector('[data-pertes]').hidden = true; fermerMenu();
+      }
       if (t.matches('[data-colleok]')) {
         const a = armeeCollee(boite.querySelector('[data-colleta]').value, cote);
         if (!a.length) { boite.querySelector('[data-collemsg]').textContent = 'Aucune unité reconnue dans ce texte.'; return; }
@@ -1893,7 +2223,7 @@ window.SIMUOPTI_LITE = true;
         <div class="grid2" style="margin-top:8px">
           <label>TdP connue (si un seul RC)<input type="number" data-tp="niv" min="0" max="200" placeholder="ex. 66"></label>
           <label title="Unités de ce type qu’il avait déjà chez lui au moment de partir (lues dans un RC pris avant son départ)">Déjà chez lui au départ<input type="text" data-tp="stock" placeholder="0 = fourmilière vide"></label>
-          <label>Unité qu’il pond<select data-tp="unite"><option value="">auto (la plus nombreuse)</option>${Object.keys(Core.TDP_BASE).map((c) => `<option value="${c}">${L(c)}</option>`).join('')}</select></label>
+          <label>Unité qu’il pond<select data-tp="unite"><option value="">auto (détectée sur les 2 RC)</option>${Object.keys(Core.TDP_BASE).map((c) => `<option value="${c}">${L(c)}</option>`).join('')}</select></label>
         </div>
         <details class="aide"><summary>Réglages facultatifs (dates, unités évoluées)</summary>
           <div class="grid2" style="margin-top:4px">
@@ -2017,7 +2347,8 @@ window.SIMUOPTI_LITE = true;
         const niv = parseFloat(q('[data-tp=niv]').value);
         tpOut.innerHTML = '';
         if (!seul.trim()) { departOut.innerHTML = '<div class="warn">Colle au moins un RC.</div>'; return; }
-        const d = Core.departDepuisRc(seul, { tdp: isFinite(niv) ? niv : undefined, unite, stock: Core.toInt(q('[data-tp=stock]').value), date: Core.dateRc(q(`[data-tp=${rc1.trim() ? 'd1' : 'd2'}]`).value) });
+        const cSeul = Core.parseReports(seul)[0], ficheSeul = cSeul && cSeul.header ? ficheDe(cSeul.header.def) : null;
+        const d = Core.departDepuisRc(seul, { tdp: isFinite(niv) ? niv : undefined, unite: unite || (ficheSeul && ficheSeul.unite) || null, stock: Core.toInt(q('[data-tp=stock]').value), date: Core.dateRc(q(`[data-tp=${rc1.trim() ? 'd1' : 'd2'}]`).value) });
         if (!d.erreur && d.nom) {
           const j = joueur(d.nom);
           if (isFinite(niv)) j.tdp = niv;
@@ -2030,12 +2361,13 @@ window.SIMUOPTI_LITE = true;
       const x = Core.toInt(q('[data-tp=x]').value);
       const r = Core.tdpDepuisRcs(q('[data-tp=rc1]').value, q('[data-tp=rc2]').value, {
         t1: Core.dateRc(q('[data-tp=d1]').value), t2: Core.dateRc(q('[data-tp=d2]').value),
-        evol: x ? { [q('[data-tp=xc]').value]: x } : {},
+        evol: x ? { [q('[data-tp=xc]').value]: x } : undefined,
       });
       if (r.erreur) { tpOut.innerHTML = `<div class="warn">${r.erreur}</div>`; dernierTdp = null; return; }
       dernierTdp = r;
       let h = `<div class="mut">Écart entre les deux RC : ${Core.dureeTexte(r.t)}${r.nom ? ` · joueur ${esc(r.nom)}` : ''}</div>`;
       if (!r.memeJoueur) h += '<div class="warn">⚠ Les deux RC ne visent pas le même joueur.</div>';
+      if (r.evolDetectees.length) h += `<div class="ok">Évolutions détectées, retirées de la ponte : ${r.evolDetectees.map(([f, t, n]) => `${fmt(n)} ${L(f)} → ${L(t)}`).join(', ')}.</div>`;
       h += `<table><tr><th>Unité</th><th>RC 1</th><th>Tués RC 1</th><th>RC 2</th><th>Pondues</th><th>TdP</th></tr>
         ${r.lignes.map((l) => `<tr${r.best && l.c === r.best.c ? ' style="background:var(--okf)"' : ''}><td>${L(l.c)}</td><td>${fmt(l.p1)}</td><td>${fmt(l.k)}</td><td>${fmt(l.p2)}</td><td>${l.u > 0 ? '+' + fmt(l.u) : fmt(l.u)}</td><td>${l.tdp != null ? f2(l.tdp) : '—'}</td></tr>`).join('')}</table>`;
       if (r.best) {
@@ -2079,7 +2411,8 @@ window.SIMUOPTI_LITE = true;
     const champs = [['armes', 'Armes'], ['bouclier', 'Bouclier'], ['dome', 'Dôme'], ['loge', 'Loge'], ['va', 'VA'], ['tdp', 'TdP'], ['stock', 'Déjà chez lui au départ']];
     let boutonSim = '';
     boutonSim = '<button class="b" type="button" data-fiva="sim">⚔️ Simulateur</button>';
-    const srcVa = { exacte: 'exacte', mesuree: 'mesurée sur un trajet', depart: 'mesurée depuis son départ', estimee: 'estimée d’après ses attaques', saisie: 'saisie à la main' };
+    const srcVa = { exacte: 'exacte', mesuree: 'mesurée sur un trajet', depart: 'mesurée depuis son départ', estimee: 'estimée d’après ses attaques', saisie: 'saisie à la main', site: 'lue sur le site de l’alliance' };
+    const srcArmee = { saisie: 'saisie à la main', site: 'lue sur le site de l’alliance' };
     ui.rendreJoueurs = () => {
       const f = filtre.value.trim().toLowerCase();
       const js = Object.values(cfg.joueurs).filter((j) => !f || j.nom.toLowerCase().includes(f)).sort((a, b) => (b.maj || 0) - (a.maj || 0));
@@ -2099,10 +2432,16 @@ window.SIMUOPTI_LITE = true;
           <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-fik="uneArmee" style="width:auto!important"${j.uneArmee ? ' checked' : ''}>une seule armée</label></div>
         <div class="mut" style="margin-top:6px">
           ${j.va != null ? `VA ${srcVa[j.vaSrc] || 'enregistrée'}.<br>` : ''}
-          ${j.niveauxT ? `Niveaux lus dans les RC jusqu’au ${dateCourte(j.niveauxT)}${j.sup && Object.keys(j.sup).length ? ' (≈ = supposé)' : ''}.<br>` : ''}
-          ${j.defense ? `Dernière défense vue le ${dateCourte(j.defense.t)} : ${armyStr(Object.entries(j.defense.armee))}.<br>` : 'Aucune défense connue (elle se remplit quand il est défenseur dans un RC analysé).<br>'}
+          ${j.niveauxT ? `Niveaux lus (RC ou site de l’alliance) jusqu’au ${dateCourte(j.niveauxT)}${j.sup && Object.keys(j.sup).length ? ' (≈ = supposé)' : ''}.<br>` : ''}
           ${j.depart ? `Dernier départ calculé : ${dateCourte(j.depart)}.<br>` : ''}
           ${j.rcs ? 'RC de ponte enregistrés : ils reviennent dans l’onglet VA &amp; TdP quand tu le choisis.' : ''}</div>
+        <div class="fi-armee"><b>⚔️ Armée connue</b>
+          ${[['armee', j.armee ? `Armée ${srcArmee[j.armee.src] || 'enregistrée'}` : ''], ['defense', 'Dernière défense vue'], ['attaque', 'Dernière attaque vue']]
+            .filter(([k]) => j[k] && j[k].armee).map(([k, t]) => `<div class="mut">${t} le ${dateCourte(j[k].t)}${armeeFiche(j) === j[k] ? ' <b>(la plus récente, utilisée)</b>' : ''} : ${Object.values(j[k].armee).some((n) => n > 0) ? armyStr(Object.entries(j[k].armee)) : 'plus aucune troupe'}.</div>`).join('')
+            || '<div class="mut">Aucune armée connue : colle-la ci-dessous, ou analyse un RC où il défend.</div>'}
+          <textarea data-fiarmee placeholder="Colle ici son armée : page Armée, rapport de combat ou liste « 456 Jeunes Soldates Naines, 1 450 Artilleuses »"></textarea>
+          <div class="row"><button class="b" type="button" data-fiarmeeok>💾 Enregistrer son armée</button>${j.armee ? '<button class="b alt" type="button" data-fiarmeesuppr>🗑 Oublier l’armée enregistrée</button>' : ''}<span data-fiarmeemsg></span></div>
+        </div>
         <div class="row">
           ${boutonSim}<button class="b" type="button" data-fiva="va">🕐 VA &amp; TdP</button>
           <button class="b alt" type="button" data-ficopie>📋 Copier la ligne</button><button class="b alt" type="button" data-fisuppr>🗑 Supprimer la fiche</button></div>
@@ -2116,6 +2455,15 @@ window.SIMUOPTI_LITE = true;
       if (!j) return;
       if (t.dataset.fiva) { choisirFiche(j.nom); onglet(t.dataset.fiva); }
       if (t.matches('[data-ficopie]')) copier(ligneFiche(j), t);
+      if (t.matches('[data-fiarmeeok]')) {
+        // rapport de combat collé : on garde la ligne de sa défense ; sinon la page Armée ou une liste
+        const txt = q('[data-fiarmee]').value, m = txt.match(/Troupes en d[ée]fense\s*:([^\n]*)/i);
+        const a = Core.parseArmyLoose(m ? m[1] : txt);
+        if (!a.length) { q('[data-fiarmeemsg]').innerHTML = '<span class="warn">Aucune unité reconnue dans ce texte.</span>'; return; }
+        j.armee = { armee: Object.fromEntries(a), t: Date.now(), src: 'saisie' };
+        j.maj = Date.now(); saveCfg(cfg); t.blur(); choisirFiche(j.nom);
+      }
+      if (t.matches('[data-fiarmeesuppr]')) { delete j.armee; j.maj = Date.now(); saveCfg(cfg); t.blur(); choisirFiche(j.nom); }
       if (t.matches('[data-fisuppr]')) {
         // deux clics : pas de boîte de dialogue dans l'application
         if (!t.dataset.ok) { t.dataset.ok = '1'; t.textContent = 'Confirmer la suppression ?'; setTimeout(() => { if (t.isConnected) { delete t.dataset.ok; t.textContent = '🗑 Supprimer la fiche'; } }, 4000); return; }
