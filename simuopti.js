@@ -245,20 +245,26 @@ window.SIMUOPTI_LITE = true;
       return out;
     }
 
+    /** « X attaque votre … » : le défenseur est celui qui a reçu le RC, pas forcément moi (rapport transmis). */
+    const recu = (h) => !!(h && h.att && !h.def);
+
     /** Fusionne les infos par joueur et croise les rapports. */
     function players(analyses, me) {
       const P = {};
-      const get = (name) => (P[name.toLowerCase()] = P[name.toLowerCase()] || { name, armes: [], bouclier: [], lieux: { terrain: [], dome: [], loge: [] }, plafonds: { terrain: [], dome: [], loge: [] }, cands: {} });
+      const get = (name) => (P[name.toLowerCase()] = P[name.toLowerCase()] || { name, armes: [], bouclier: [], lieux: { terrain: [], dome: [], loge: [] }, plafonds: { terrain: [], dome: [], loge: [] }, cands: {}, vues: [] });
       for (const r of analyses) {
         const h = r.combat.header || {};
-        const an = h.att || me, dn = h.def || me;
+        // attaque reçue : on ne sait pas qui défend, rien n'est noté pour le défenseur
+        const an = h.att || me, dn = recu(h) ? null : h.def || me;
         if (an) {
           const p = get(an);
+          p.vues.push({ armee: r.combat.attackers, role: 'attaque', t: r.combat.date || 0 });
           if (r.attArmes != null) p.armes.push(r.attArmes);
           if (r.attMult) p.bouclier.push((r.attMult - 1) * 10);
         }
         if (dn) {
           const p = get(dn);
+          p.vues.push({ armee: r.combat.defenders, role: 'défense', place: h.place || null, t: r.combat.date || 0 });
           if (r.defArmes != null) p.armes.push(r.defArmes);
           const place = h.place || null;
           const m = r.defMult || (r.xpMult && !r.xpMult.full ? r.xpMult.mult : null);
@@ -267,6 +273,8 @@ window.SIMUOPTI_LITE = true;
         }
       }
       for (const p of Object.values(P)) {
+        // armée vue : celle du rapport le plus récent (à date égale ou sans date, le premier collé)
+        p.vue = p.vues.reduce((a, b) => (b.t > a.t ? b : a), p.vues[0]) || null;
         p.armesLvl = p.armes.length ? Math.round(median(p.armes)) : null;
         const bs = p.bouclier.filter((b) => nearInt(b, 0.05)).map(Math.round);
         p.bouclierLvl = bs.length ? median(bs) : null;
@@ -719,7 +727,7 @@ window.SIMUOPTI_LITE = true;
 
 
     const api = { TAMPON_DEFAUT, rythmePonte, departDepuisRc, dateRc, tdpDepuisRcs, NOMS, T0, trajet, vaDepuisTrajet, dureeLue, dureeTexte, tdp, TDP_BASE, toInt,
-      LAB, UNITS, EVOL, GAIN, parseArmyLoose, optimize, parseReports, analyseCombat, analyseText, xpPct, combos, plan, players, sumBy };
+      LAB, UNITS, EVOL, GAIN, parseArmyLoose, optimize, parseReports, analyseCombat, analyseText, xpPct, combos, plan, players, sumBy, recu };
     Object.assign(api, { simulate, messageSimu, multLieu });
     return api;
   })();
@@ -730,7 +738,7 @@ window.SIMUOPTI_LITE = true;
    *  INTERFACE
    * ===================================================================== */
   const KEY = 'simuOpti';
-  const VERSION = '1.18.0'; // aligné sur @version
+  const VERSION = '1.18.4'; // aligné sur @version
   // Mode application (APK Android) : la page index.html de l'appli pose ce drapeau avant de charger le script
   const APP = window.SIMUOPTI_APP === true;
   // Page web légère : ni simulateur ni requêtes en ligne (la page pose ce drapeau en plus du mode application)
@@ -770,6 +778,11 @@ window.SIMUOPTI_LITE = true;
   const ORDER = Object.keys(Core.UNITS);
   const L = (c) => Core.LAB[c] || c;
   function armyStr(a) { return a.map(([c, n]) => `${fmt(n)} ${L(c)}`).join(', '); }
+  /** Unités, attaque, vie et défense d'une armée : attaque et défense avec le bonus d'armes, vie avec le bouclier, s'ils sont connus. */
+  function statsArmee(a, armes, bouclier) {
+    const s = (k) => Math.round(Core.sumBy(a, k) * (1 + ((k === 'vie' ? bouclier : armes) || 0) / 10));
+    return { n: a.reduce((x, [, n]) => x + n, 0), att: s('att'), vie: s('vie'), def: s('def') };
+  }
   const joueur = (nom) => (cfg.joueurs[String(nom).toLowerCase()] = cfg.joueurs[String(nom).toLowerCase()] || { nom });
 
   /* ============================ Fiches joueurs ============================
@@ -977,6 +990,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .rc2-replie .ac-rc2btn .chev{transform:none}
   #simuopti-ui .ac-deux.rc2-replie{grid-template-columns:minmax(0,1fr)}
   #simuopti-ui .ac-deux.rc2-replie .ac-rc2 textarea{display:none}
+  #simuopti-ui .ac-deux.rc2-replie .ac-rc2 .ta-x{display:none}
   #simuopti-ui .ac-deux.rc2-replie .ac-rc2btn{min-height:44px;padding:0 12px;border:1px dashed var(--ligne);border-radius:10px}
   #simuopti-ui .pastille-n{display:inline-flex;width:22px;height:22px;border-radius:50%;border:1px solid var(--or);color:var(--or);align-items:center;justify-content:center;font-size:12px}
   #simuopti-ui .pastille-n.plein{background:var(--or);color:var(--sur)}
@@ -1002,6 +1016,7 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .tuile{background:var(--champ);border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:2px;min-width:0}
   #simuopti-ui .tuile small{color:var(--mut);font-size:11.5px}
   #simuopti-ui .tuile b{font-size:15px;overflow-wrap:anywhere}
+  #simuopti-ui .tuile .ac-ponte{display:flex;align-items:center;gap:6px;min-height:24px;margin:0;font-size:12px;color:var(--mut);cursor:pointer}
   #simuopti-ui .connecte{font-size:12.5px;font-weight:700}
   #simuopti-ui .ac-traque input[data-trq]{flex:1 1 200px;min-width:0}
   #simuopti-ui .ac-traque table{margin-top:8px}
@@ -1147,6 +1162,18 @@ window.SIMUOPTI_LITE = true;
   #simuopti-ui .armybox .badge{margin-left:auto;text-transform:none;letter-spacing:0;background:var(--warnf);color:var(--warn);border-color:var(--warn)}
   #simuopti-ui .armybox .badge.on{background:var(--okf);color:var(--ok);border-color:var(--ok)}
   #simuopti-ui .armybox textarea,#simuopti-ui .armybox [data-armyread]{margin:0 12px 10px;width:calc(100% - 24px)}
+  #simuopti-ui .ta-box{position:relative;display:block;min-width:0}
+  #simuopti-ui .ta-box>textarea{padding-right:46px}
+  #simuopti-ui .ta-x{position:absolute;top:6px;right:18px;width:26px;height:26px;padding:0;border:1px solid var(--ligne2);border-radius:50%;background:var(--carte2);color:var(--mut);font:700 16px/1 system-ui,sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  #simuopti-ui .ta-x:hover{color:var(--texte);border-color:var(--bronze)}
+  #simuopti-ui .ta-box>textarea:placeholder-shown+.ta-x{display:none}
+  #simuopti-ui .armybox .ta-box{margin:0 12px 10px}
+  #simuopti-ui .armybox .ta-box>textarea,#simuopti-ui .reglages-cartes .armybox .ta-box>textarea{margin:0;width:100%}
+  #simuopti-ui .reglages-cartes .armybox .ta-box{flex:1 1 90px;margin:0;display:flex}
+  #simuopti-ui .sim .collebox .ta-x{top:10px}
+  #simuopti-ui .tab-defile{overflow-x:auto;margin-top:10px}
+  #simuopti-ui .armees-vues td,#simuopti-ui .armees-vues th{white-space:nowrap}
+  #simuopti-ui .recu .pv b{font-size:15px}
   #simuopti-ui .alertes{margin-top:8px;padding:7px 10px;border-left:3px solid var(--warn);background:var(--warnf);border-radius:8px;font-size:12.5px}
   #simuopti-ui .alertes div{margin:3px 0}
   #simuopti-ui pre.copie{white-space:pre-wrap;background:var(--champ);border:1px solid var(--ligne);border-radius:8px;padding:7px 9px;font:12px ui-monospace,Consolas,monospace;margin:6px 0;color:var(--or)}
@@ -1280,8 +1307,22 @@ window.SIMUOPTI_LITE = true;
     initRc();
     initSim();
     initVa(); initFiches(); initAccueil();
+    croixVider(panel);
+    new MutationObserver(() => croixVider(panel)).observe(panel, { childList: true, subtree: true });
     // après une mise à jour, on ouvre sur l'accueil (le tuto n'a pas encore été vu pour cette version)
     onglet(cfg.tutoVu !== VERSION ? 'accueil' : cfg.onglet || 'accueil');
+  }
+  /** Petite croix en haut à droite de chaque case où l'on colle un rapport ou une armée : vide la case. */
+  function croixVider(zone) {
+    zone.querySelectorAll('textarea').forEach((ta) => {
+      if (ta.parentElement.classList.contains('ta-box')) return;
+      const box = document.createElement('span'); box.className = 'ta-box';
+      ta.before(box); box.append(ta);
+      const x = document.createElement('button');
+      x.type = 'button'; x.className = 'ta-x'; x.textContent = '×'; x.title = 'Vider la case'; x.setAttribute('aria-label', 'Vider la case');
+      x.onclick = (e) => { e.preventDefault(); ta.value = ''; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); };
+      box.append(x);
+    });
   }
   /** Tuto (bouton « ? ») : ouvert tout seul à la première ouverture après une mise à jour. */
   function vueTuto() {
@@ -1445,6 +1486,7 @@ window.SIMUOPTI_LITE = true;
       // cible : défenseur du RC analysé (le joueur actif peut être un autre)
       const a0 = (() => { try { return Core.analyseText(ui.rcTa.value, cfg).analyses[0]; } catch (e) { return null; } })();
       const dn = a0 && a0.combat.header ? a0.combat.header.def : null, j = dn ? ficheDe(dn) : null;
+      const recuDe = a0 && Core.recu(a0.combat.header) ? a0.combat.header.att : null;
       // TdP et départ : fiche du joueur, sinon le résultat de l'onglet VA & TdP (RC sans nom)
       const tdpVa = deux && va.querySelector('[data-tpres] .va-res') ? (va.querySelector('[data-tpres] .va-res').textContent.match(/TdP \d+/) || [])[0] : null;
       const depRes = deux && va.querySelector('[data-depart] .va-res') ? va.querySelector('[data-depart] .va-res').textContent : '';
@@ -1462,20 +1504,28 @@ window.SIMUOPTI_LITE = true;
           <div class="ac-nets">${netsDe(prop).map(([t, n]) => `<div><small>${t}</small><b class="${n >= 0 ? 'ok' : 'warn'}">${n >= 0 ? '+' : ''}${fmt(n)}</b></div>`).join('')}</div>
           <div class="ac-net">Gain net total : <b>${nG(prop)}</b>${autre && bCopie ? ` · autre option, ${nTours === 2 ? '1 tour' : '2 tours'} : ${nG(autre)}` : ''}</div>
           ${sim ? `<div class="mut">Le simulateur reçoit cette armée en attaque contre sa défense du RC${ponteOk ? ` + ${fmt(p.n)} ${L(p.unite)} pondues` : ''}, avec ses niveaux.</div>` : ''}</div>`
-        : '<div class="ac-armee"><div class="ac-armee-tete"><span>Armée conseillée</span></div><div class="mut">Pas d’armée conseillée pour ce rapport : ses armes ou sa vie ne sont pas lisibles. Voir le détail.</div></div>';
-      res.innerHTML = `<div class="card ac-res"><div class="ac-tete"><h4>Cible : <span class="or">${dn ? esc(dn) : 'inconnue (RC sans nom)'}</span></h4>
+        : recuDe ? `<div class="ac-armee"><div class="ac-armee-tete"><span>Armée conseillée</span></div><div class="mut">Pas d’armée conseillée : ce RC est une attaque reçue de <b>${esc(recuDe)}</b>, reçue par toi ou par le joueur qui te l’a transmis. Son armée en attaque est dans le détail. Pour attaquer ${esc(recuDe)}, colle un RC où il est en défense (une sonde sur lui).</div></div>`
+        : '<div class="ac-armee"><div class="ac-armee-tete"><span>Armée conseillée</span></div><div class="mut">Pas d’armée conseillée : ce rapport ne montre pas sa vie ou ses armes. Envoie une sonde qui tue quelques unités, ou indique son bouclier et son niveau dans sa fiche.</div></div>';
+      res.innerHTML = `<div class="card ac-res"><div class="ac-tete"><h4>Cible : <span class="or">${dn ? esc(dn) : recuDe ? 'aucune (attaque reçue)' : 'inconnue (RC sans nom)'}</span></h4>
         <div class="row"><button class="b alt" type="button" data-acdetail>Voir le détail</button></div></div>
         <div class="tuiles">${j ? tuile('Ses niveaux', `A ${nivTxt(j, 'armes')} · B ${nivTxt(j, 'bouclier')} · D ${nivTxt(j, 'dome')} · L ${nivTxt(j, 'loge')}`) : ''}
           ${vie ? tuile('Vie à battre', vie.textContent) : ''}
           ${tuile('Sa TdP', tdpTxt || (deux ? 'non mesurable' : '2 RC nécessaires'), tdpTxt ? '' : 'mut')}
-          ${tuile('Ponte ajoutée', ponteOk ? `+${fmt(p.n)} ${L(p.unite)}` : cfg.ponte === false ? 'option décochée' : '—', ponteOk ? '' : 'mut')}
+          ${p && p.n > 0 ? `<div class="tuile"><small>Ponte ajoutée</small><b class="${ponteOk ? '' : 'mut'}">+${fmt(p.n)} ${L(p.unite)}</b><label class="ac-ponte"><input type="checkbox" data-acponte${ponteOk ? ' checked' : ''}> Compter dans le calcul</label></div>` : tuile('Ponte ajoutée', '—', 'mut')}
           ${tuile('Départ de son armée', depTxt || '—', depTxt && depTxt !== 'non datable' ? '' : 'mut')}</div>
+        ${deux && ui.tpAlerte ? `<div class="warn">⚠ ${esc(ui.tpAlerte)}</div>` : ''}
         ${armee}</div>`;
       if (bCopie) res.querySelector('[data-accopie]').onclick = (e) => copier(bCopie.dataset.copiearmee, e.target);
       if (ui.traqueCible && dn) ui.traqueCible(dn);
     };
     // chaque nouvelle analyse (réglage changé, case ponte, armée, fiche complétée) met le résumé à jour
     ui.apresRender = () => { if (actif) resume(); else notePonte(); };
+    // case de la tuile « Ponte ajoutée » : même réglage que la case de « Mes réglages »
+    res.addEventListener('change', (e) => {
+      if (!e.target.matches('[data-acponte]')) return;
+      const c = ui.reglages.querySelector('[data-ponte]');
+      c.checked = e.target.checked; c.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     res.addEventListener('click', (e) => {
       if (e.target.closest('[data-acdetail]')) onglet('rc');
       if (e.target.closest('[data-acsim]')) { const b = ui.rcOut.querySelector(`[data-tosim="${e.target.closest('[data-acsim]').dataset.acsim}"]`); if (b) b.click(); }
@@ -1485,6 +1535,7 @@ window.SIMUOPTI_LITE = true;
       const a = t1.value.trim(), b = t2.value.trim();
       if (!a && !b) { actif = false; res.innerHTML = '<div class="card warn">Colle au moins un rapport de combat.</div>'; return; }
       deuxRc = !!(a && b);
+      ui.tpAlerte = null;
       ui.rcTa.value = deuxRc ? t2.value : a ? t1.value : t2.value;
       cfg.rapport = ui.rcTa.value; saveCfg(cfg);
       if (deuxRc) {
@@ -1731,6 +1782,22 @@ window.SIMUOPTI_LITE = true;
       synth += `<tr><td>${nom}</td><td>${p.armesLvl ?? '—'}</td><td>${bouclier}</td><td>${dome}</td><td>${loge}</td><td class="mut">${vies.join('<br>') || '—'}</td></tr>`;
     }
     synth += '</table>';
+    // armée vue de chaque joueur dans son rapport le plus récent
+    const vues = res.players.filter((p) => p.vue);
+    if (vues.length) {
+      const brute = '<small class="mut"> brute</small>';
+      synth += '<div class="tab-defile"><table class="armees-vues"><tr><th>Joueur</th><th>Unités</th><th>⚔ Attaque</th><th>❤ Vie</th><th>🛡️ Défense</th></tr>';
+      for (const p of vues) {
+        const st = statsArmee(p.vue.armee, p.armesLvl, p.bouclierLvl);
+        const sa = p.armesLvl == null ? brute : '';
+        // vie : en attaque, avec son bouclier ; en défense, avec la vie lue dans son dôme ou sa loge, sinon son bouclier seul
+        const pl = p.vue.role === 'défense' && p.vue.place !== 'terrain' ? p.vue.place : null, rl = pl ? p.res[pl] : null, sans = pl ? `, sans ${LIEU[pl].toLowerCase()}` : '';
+        const vie = rl ? Core.sumBy(p.vue.armee, 'vie') * rl.mult : st.vie;
+        const noteVie = rl ? `${LIEU[pl].toLowerCase()} ×${f2(rl.mult)}` : p.bouclierLvl == null ? 'brute' + sans : `bouclier ${p.bouclierLvl}${sans}`;
+        synth += `<tr><td>${esc(p.name)}<small class="mut"> en ${p.vue.role}</small></td><td>${fmt(st.n)}</td><td>${fmt(st.att)}${sa}</td><td>${fmt(vie)}<small class="mut"> ${noteVie}</small></td><td>${fmt(st.def)}${sa}</td></tr>`;
+      }
+      synth += '</table></div><div class="mut">Armée vue dans son rapport le plus récent. Attaque et défense avec le bonus de ses armes. Vie : en attaque, avec son bouclier ; en défense, avec la vie lue dans son dôme ou sa loge (ex. « loge ×4,30 »), sinon avec son bouclier seul (« sans loge »). « brute » = niveau inconnu, sans bonus.</div>';
+    }
     const meP = res.players.find((p) => p.name.toLowerCase() === me.toLowerCase());
     if (meP && meP.bouclierLvl == null && !cfg.bouclier) alertes.unshift(`Ton bouclier n’est pas lisible dans ces rapports : le calcul suppose bouclier ${res.my.bouclier} (= tes armes). Renseigne-le dans les réglages, il fixe le nombre de JSN tampon.`);
     synth += `<div class="mut" style="margin-top:6px"><span class="niv ok">vert</span> calculé · <span class="niv warn">≈ orange</span> une des combinaisons possibles (même vie)</div>`;
@@ -1746,14 +1813,53 @@ window.SIMUOPTI_LITE = true;
 
     // ---- Un bloc par combat : lecture du RC, réglages (une seule fois), propositions
     const LIEU_LONG = { dome: 'Dôme', loge: 'Loge Impériale', terrain: 'Terrain de chasse' };
+    // lecture détaillée d'un rapport (tours, armes, bouclier), repliée sous chaque combat
+    const lectureRc = (r, an, dn) => {
+      let lect = `<div class="mut">Attaque : ${armyStr(r.combat.attackers)}</div><table><tr><th>Tour</th><th>Vie défenseur</th><th>Vie attaquant</th></tr>`;
+      for (const rd of r.rounds) {
+        const v = (m, all) => (m == null ? '—' : all ? `<span class="mut">≤ ×${f2(m)} (tous tués)</span>` : `×${f2(m)}`);
+        const vd = rd.candsDef && rd.candsDef.length > 1 ? `<span class="warn">×${f2(rd.candsDef[0])} à ×${f2(rd.candsDef[rd.candsDef.length - 1])}</span>` : v(rd.multDef, rd.allDef);
+        lect += `<tr><td>${rd.n}</td><td>${vd}</td><td>${v(rd.multAtt, rd.allAtt)}</td></tr>`;
+      }
+      lect += '</table>';
+      lect += `<div>Armes : ${esc(an)} <b>${r.attArmes ?? '—'}</b> · ${esc(dn)} <b>${r.defArmes ?? '—'}</b>`;
+      if (r.attMult) lect += ` · Bouclier ${esc(an)} <b>${Math.round((r.attMult - 1) * 10)}</b>`;
+      lect += '</div>';
+      if (r.oneShot) lect += `<div class="${r.facteurReplique === 0.1 ? 'ok' : 'warn'}">One-shot : réplique ×${r.facteurReplique ?? '?'}.</div>`;
+      if (r.xpMult) {
+        if (r.xpMult.full) lect += '<div class="mut">XP à 100 % : la vie exacte n’est pas lisible, seulement un plafond.</div>';
+        else lect += `<div class="ok">XP ${f2(r.xpMult.pct)} % → vie réelle du défenseur ×${f2(r.xpMult.mult)} (cochenille ${cfg.cochenille}).</div>`;
+      }
+      return lect;
+    };
+    // attaque reçue : seule l'armée de l'attaquant est lue ; le défenseur (toi, ou le joueur qui t'a transmis le RC) n'est pas une cible
+    const carteRecue = (r, h) => {
+      const an = h.att, pa = res.players.find((p) => memeNom(p.name, an)) || {};
+      const armes = r.attArmes ?? pa.armesLvl, bouclier = r.attMult ? Math.round((r.attMult - 1) * 10) : pa.bouclierLvl;
+      const st = statsArmee(r.combat.attackers, armes, bouclier), nbT = r.rounds.length;
+      const pv = (t, v, sous) => `<div class="pv"><span>${t}</span><b>${fmt(v)}</b><small>${sous}</small></div>`;
+      return `<div class="card combat recu"><div class="tete"><h4>📥 Attaque reçue · ${esc(an)} → ${h.colonie ? 'colonie' : LIEU_LONG[h.place] || '?'}</h4><span class="mut">${nbT} tour${nbT > 1 ? 's' : ''}</span></div>
+        <div class="mut">Ce rapport a été reçu par le défenseur : toi, ou le joueur qui te l’a transmis. Ce n’est pas une cible : pas d’armée conseillée. Pour attaquer ${esc(an)}, colle un RC où il est en défense (une sonde sur lui).</div>
+        <div class="pastilles">${pv('Unités', st.n, 'en attaque')}${pv('⚔ Attaque', st.att, armes != null ? `armes ${armes}` : 'brute')}${pv('❤ Vie', st.vie, bouclier != null ? `bouclier ${bouclier}` : 'brute')}${pv('🛡️ Défense', st.def, armes != null ? `armes ${armes}` : 'brute')}</div>
+        <div class="mut">Son armée : ${armyStr(r.combat.attackers)}</div>
+        <div class="mut">Défense en face : ${armyStr(r.combat.defenders)}</div>
+        <details class="det"><summary>Lecture du RC (tours, armes, bouclier)</summary>${lectureRc(r, an, 'le défenseur')}</details></div>`;
+    };
     let reglagesPlaces = false;
     res.analyses.forEach((r, i) => {
       const h = r.combat.header || {};
+      if (Core.recu(h)) { html += carteRecue(r, h); return; }
       const an = h.att || me, dn = h.def || me;
       const place = h.place;
       const pd = res.players.find((p) => p.name.toLowerCase() === String(dn).toLowerCase());
-      const eMult = r.defMult || (r.xpMult && !r.xpMult.full ? r.xpMult.mult : null) || r.defPlafond;
+      let eMult = r.defMult || (r.xpMult && !r.xpMult.full ? r.xpMult.mult : null) || r.defPlafond;
       const exactV = !!(r.defMult || (r.xpMult && !r.xpMult.full));
+      // vie pas lisible dans ce RC (sonde trop faible, ou tout tué : simple plafond) : niveaux connus de sa fiche
+      const fVie = !exactV && place ? ficheDe(dn) : null;
+      const mFiche = fVie && fVie.bouclier != null && (place === 'terrain' || fVie[place] != null) ? Core.multLieu(fVie.bouclier, { type: place, dome: fVie.dome || 0, loge: fVie.loge || 0 }) : null;
+      const viaFiche = !!(mFiche && (!eMult || mFiche < eMult));
+      if (viaFiche) eMult = mFiche;
+      const sureV = exactV || viaFiche;
       const nbT = r.rounds.length;
       // ponte depuis l'heure du RC, d'après la TdP et l'unité pondue de sa fiche (désactivable dans les réglages)
       let ennemi = r.combat.defenders, ponte = null;
@@ -1794,17 +1900,17 @@ window.SIMUOPTI_LITE = true;
       const combos = rp ? rp.combos : [];
       const ex = combos.length === 1 ? combos[0] : rp && rp.hyp ? rp.hyp : combos[0];
       const libVie = place === 'loge' ? 'Bouclier + Loge' : place === 'dome' ? 'Bouclier + Dôme' : 'Bouclier';
-      const sousVie = !eMult ? 'pas lisible' : !exactV ? 'plafond' : place === 'terrain' ? (ex ? `bouclier ${ex.bouclier}` : '') : ex ? `${combos.length > 1 ? 'ex. ' : ''}${ex.bouclier} + ${ex.niveau}` : '';
+      const sousVie = !eMult ? 'pas lisible' : viaFiche ? 'fiche' : !exactV ? 'plafond' : place === 'terrain' ? (ex ? `bouclier ${ex.bouclier}` : '') : ex ? `${combos.length > 1 ? 'ex. ' : ''}${ex.bouclier} + ${ex.niveau}` : '';
       const autreLieu = place === 'dome' ? 'loge' : 'dome';
       const fiche = ficheDe(dn) || {};
       const autreV = fiche[autreLieu] != null ? nivTxt(fiche, autreLieu) : '?';
       html += `<div class="pastilles">
         <div class="pv"><span>Armes</span><b class="${r.defArmes != null ? 'ok' : 'mut'}">${r.defArmes ?? '?'}</b><small>${r.defArmes != null ? 'lu' : 'pas lu'}</small></div>
-        <div class="pv large"><span>${libVie}</span><b class="${exactV ? 'ok' : 'warn'}">${eMult ? `vie ${exactV ? '' : '≤ '}×${f2(eMult)}` : '?'}</b><small>${sousVie}</small></div>
+        <div class="pv large"><span>${libVie}</span><b class="${sureV ? 'ok' : 'warn'}">${eMult ? `vie ${sureV ? '' : '≤ '}×${f2(eMult)}` : '?'}</b><small>${sousVie}</small></div>
         <div class="pv"><span>${autreLieu === 'dome' ? 'Dôme' : 'Loge'}</span><b class="${autreV === '?' ? 'mut' : 'ok'}">${esc(autreV)}</b><small>${autreV === '?' ? 'pas vu' : 'fiche'}</small></div>
       </div>`;
       if (eMult) {
-        let src = exactV ? (r.defMult ? `Vie ×${f2(eMult)} lue sur les tués du rapport.` : `Vie ×${f2(eMult)} calculée d’après l’XP (${f2(r.xpMult.pct)} %).`) : `Tous ses défenseurs sont morts sans XP partielle : seul un plafond de vie (×${f2(eMult)}) est lisible.`;
+        let src = viaFiche ? `Vie ×${f2(eMult)} d’après les niveaux de sa fiche : ce rapport ne permet pas de la lire.` : exactV ? (r.defMult ? `Vie ×${f2(eMult)} lue sur les tués du rapport.` : `Vie ×${f2(eMult)} calculée d’après l’XP (${f2(r.xpMult.pct)} %).`) : `Tous ses défenseurs sont morts sans XP partielle : seul un plafond de vie (×${f2(eMult)}) est lisible.`;
         if (exactV && combos.length > 1) src += ` ${combos.slice(0, 3).map((c, k) => (k ? `${c.bouclier} + ${c.niveau}` : `Bouclier ${c.bouclier} + ${place === 'dome' ? 'Dôme' : 'Loge'} ${c.niveau}`)).join(', ')}${combos.length > 3 ? '…' : ''} : même vie, donc même résultat.`;
         html += `<div class="mut">${src}</div>`;
       }
@@ -1816,21 +1922,7 @@ window.SIMUOPTI_LITE = true;
       r.warn.forEach((w) => (html += `<div class="warn">⚠ ${esc(w)}</div>`));
 
       // lecture détaillée du rapport, repliée
-      let lect = `<div class="mut">Attaque : ${armyStr(r.combat.attackers)}</div><table><tr><th>Tour</th><th>Vie défenseur</th><th>Vie attaquant</th></tr>`;
-      for (const rd of r.rounds) {
-        const v = (m, all) => (m == null ? '—' : all ? `<span class="mut">≤ ×${f2(m)} (tous tués)</span>` : `×${f2(m)}`);
-        const vd = rd.candsDef && rd.candsDef.length > 1 ? `<span class="warn">×${f2(rd.candsDef[0])} à ×${f2(rd.candsDef[rd.candsDef.length - 1])}</span>` : v(rd.multDef, rd.allDef);
-        lect += `<tr><td>${rd.n}</td><td>${vd}</td><td>${v(rd.multAtt, rd.allAtt)}</td></tr>`;
-      }
-      lect += '</table>';
-      lect += `<div>Armes : ${esc(an)} <b>${r.attArmes ?? '—'}</b> · ${esc(dn)} <b>${r.defArmes ?? '—'}</b>`;
-      if (r.attMult) lect += ` · Bouclier ${esc(an)} <b>${Math.round((r.attMult - 1) * 10)}</b>`;
-      lect += '</div>';
-      if (r.oneShot) lect += `<div class="${r.facteurReplique === 0.1 ? 'ok' : 'warn'}">One-shot : réplique ×${r.facteurReplique ?? '?'}.</div>`;
-      if (r.xpMult) {
-        if (r.xpMult.full) lect += '<div class="mut">XP à 100 % : la vie exacte n’est pas lisible, seulement un plafond.</div>';
-        else lect += `<div class="ok">XP ${f2(r.xpMult.pct)} % → vie réelle du défenseur ×${f2(r.xpMult.mult)} (cochenille ${cfg.cochenille}).</div>`;
-      }
+      const lect = lectureRc(r, an, dn);
 
       if (eMult && r.defArmes != null) {
         const cibles = (cfg.xpUnits && cfg.xpUnits.length) ? cfg.xpUnits : ['T'];
@@ -1838,7 +1930,7 @@ window.SIMUOPTI_LITE = true;
         const illimite = [['JSN', 1e15], ...(frappeurs.length ? frappeurs : ['T']).map((u) => [u, 1e15])];
         const opt = (avail, tours) => Core.optimize({ enemy: ennemi, eArmes: r.defArmes, eMult, my: res.my, avail, cibles, tours });
         const o0 = opt(illimite, 1);
-        html += `<div class="ligne-vie"><span>Vie à battre (×${f2(eMult)}${exactV ? '' : ', plafond'} × sécurité ${f2(res.my.secu || 1.02)})</span><b>${fmt(o0.vieABattre)}</b></div>`;
+        html += `<div class="ligne-vie"><span>Vie à battre (×${f2(eMult)}${sureV ? '' : ', plafond'} × sécurité ${f2(res.my.secu || 1.02)})</span><b>${fmt(o0.vieABattre)}</b></div>`;
         html += `<details class="det"><summary>Lecture du RC (tours, armes, bouclier)</summary>${lect}</details>`;
         html += '</div>';
 
@@ -1848,6 +1940,7 @@ window.SIMUOPTI_LITE = true;
         let dB = pd && pd.bouclierLvl != null ? pd.bouclierLvl : null, niv = null;
         const rr = pd && pd.res[lieuSim];
         if (rr) { const c = rr.combos.length === 1 ? rr.combos[0] : rr.hyp; if (c) { niv = c.niveau; if (dB == null) dB = c.bouclier; } }
+        if (viaFiche) { dB = fVie.bouclier; niv = lieuSim === 'terrain' ? niv : fVie[lieuSim]; }
         if (dB == null) dB = Math.round(((lieuSim === 'terrain' ? eMult : eMult - (lieuSim === 'dome' ? 0.1 : 0.3)) - 1) * 10);
         simBase = {
           def: Object.fromEntries(ennemi),
@@ -2363,10 +2456,16 @@ window.SIMUOPTI_LITE = true;
         t1: Core.dateRc(q('[data-tp=d1]').value), t2: Core.dateRc(q('[data-tp=d2]').value),
         evol: x ? { [q('[data-tp=xc]').value]: x } : undefined,
       });
-      if (r.erreur) { tpOut.innerHTML = `<div class="warn">${r.erreur}</div>`; dernierTdp = null; return; }
+      // erreur ou joueurs différents : rien n'est gardé, ni dans la fiche ni dans l'heure de départ affichée
+      const refus = r.erreur || (r.memeJoueur ? null : 'Les deux RC ne visent pas le même joueur : TdP et départ non calculés.');
+      if (refus) {
+        tpOut.innerHTML = `<div class="warn">${refus}</div>`; dernierTdp = null; ui.departCalc = null; ui.tpAlerte = refus;
+        departOut.innerHTML = '<div class="mut">Colle 2 RC, ou 1 seul RC avec sa TdP, puis « Calculer ».</div>';
+        return;
+      }
+      ui.tpAlerte = null;
       dernierTdp = r;
       let h = `<div class="mut">Écart entre les deux RC : ${Core.dureeTexte(r.t)}${r.nom ? ` · joueur ${esc(r.nom)}` : ''}</div>`;
-      if (!r.memeJoueur) h += '<div class="warn">⚠ Les deux RC ne visent pas le même joueur.</div>';
       if (r.evolDetectees.length) h += `<div class="ok">Évolutions détectées, retirées de la ponte : ${r.evolDetectees.map(([f, t, n]) => `${fmt(n)} ${L(f)} → ${L(t)}`).join(', ')}.</div>`;
       h += `<table><tr><th>Unité</th><th>RC 1</th><th>Tués RC 1</th><th>RC 2</th><th>Pondues</th><th>TdP</th></tr>
         ${r.lignes.map((l) => `<tr${r.best && l.c === r.best.c ? ' style="background:var(--okf)"' : ''}><td>${L(l.c)}</td><td>${fmt(l.p1)}</td><td>${fmt(l.k)}</td><td>${fmt(l.p2)}</td><td>${l.u > 0 ? '+' + fmt(l.u) : fmt(l.u)}</td><td>${l.tdp != null ? f2(l.tdp) : '—'}</td></tr>`).join('')}</table>`;
